@@ -1,14 +1,14 @@
 # Automation & Web
 playwright>=1.40.0
 
-# Data Validation & Typing (Strict Typing Rule)
+# Data Validation & Typing
 pydantic>=2.5.0
+pydantic-settings>=2.0.0
 
 # AI & Orchestration
 langchain>=0.1.0
-langchain-openai  # Or generic langchain-community if using local LLMs
-# (Add specific LLM provider lib later based on your choice)
+langchain-google-genai>=0.0.1
 
 # Utilities
-python-dotenv>=1.0.0  # Config management
-pytest>=7.4.0         # Testing framework
+python-dotenv>=1.0.0
+pytest>=7.4.0
