@@ -1,47 +1,34 @@
 import sqlite3
-import json
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
-
-# Define path relative to project root
-DB_PATH = Path("data/db/orchestrator.db")
+from datetime import datetime
+from configs.settings import settings
 
 class TestMemory:
-    def __init__(self, db_path: Path = DB_PATH):
-        self.db_path = db_path
+    def __init__(self):
+        self.db_path = Path(settings.DB_PATH)
+        # 1. Ensure the folder exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # 2. Automatically create tables if they are missing
         self._init_db()
 
     def _init_db(self):
-        """Idempotent database initialization."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        """Creates the database tables if they don't exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Enable Write-Ahead Logging for better concurrency handling
+            conn.execute("PRAGMA journal_mode=WAL;")
 
-        # Table: Test Runs (Tracks a full execution session)
-        cursor.execute("""
+            # 1. Runs Table
+            conn.execute("""
             CREATE TABLE IF NOT EXISTS test_runs (
                 run_id TEXT PRIMARY KEY,
                 intent TEXT,
                 status TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+            """)
 
-        # Table: Context Variables (Shared memory between roles)
-        # Example: run_id='run_1', key='order_id', value='ORD-555'
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS context_vars (
-                run_id TEXT,
-                key TEXT,
-                value TEXT,
-                role_source TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (run_id, key)
-            )
-        """)
-
-        # Table: Logs (Detailed execution logs)
-        cursor.execute("""
+            # 2. Logs Table (With technical columns)
+            conn.execute("""
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT,
@@ -50,46 +37,45 @@ class TestMemory:
                 action TEXT,
                 status TEXT,
                 details TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                selector TEXT,
+                value TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(run_id) REFERENCES test_runs(run_id)
             )
-        """)
+            """)
 
-        conn.commit()
-        conn.close()
+            # 3. Saved Tests Table (For Registry)
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS saved_tests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                intent TEXT NOT NULL,
+                steps_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            conn.commit()
 
     def create_run(self, run_id: str, intent: str):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO test_runs (run_id, intent, status) VALUES (?, ?, ?)",
-                (run_id, intent, "PENDING")
+                (run_id, intent, "RUNNING")
             )
+            conn.commit()
 
-    def save_context(self, run_id: str, key: str, value: Any, role: str):
-        """Saves a variable (like an Order ID) for later use."""
-        # Convert non-string values to JSON string for storage
-        if not isinstance(value, str):
-            value = json.dumps(value)
+    def log_step(self, run_id: str, step_id: int, role: str, action: str, status: str, details: str, selector: str = "", value: str = ""):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+            INSERT INTO logs (run_id, step_id, role, action, status, details, selector, value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (run_id, step_id, role, action, status, details, selector, value))
+            conn.commit()
 
+    def update_run_status(self, run_id: str, status: str):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO context_vars (run_id, key, value, role_source) VALUES (?, ?, ?, ?)",
-                (run_id, key, value, role)
+                "UPDATE test_runs SET status = ? WHERE run_id = ?",
+                (status, run_id)
             )
-
-    def get_context(self, run_id: str, key: str) -> Optional[str]:
-        """Retrieves a variable."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT value FROM context_vars WHERE run_id = ? AND key = ?",
-                (run_id, key)
-            )
-            row = cursor.fetchone()
-            return row[0] if row else None
-
-    def log_step(self, run_id: str, step_id: int, role: str, action: str, status: str, details: str = ""):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """INSERT INTO logs (run_id, step_id, role, action, status, details)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (run_id, step_id, role, action, status, details)
-            )
+            conn.commit()

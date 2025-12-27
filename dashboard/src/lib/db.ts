@@ -5,9 +5,13 @@ import path from 'path'
 const dbPath = path.join(process.cwd(), '..', 'data', 'db', 'orchestrator.db')
 
 export const db = new Database(dbPath, {
-  readonly: true, // Dashboard only reads data for now
-  fileMustExist: true,
+  fileMustExist: false,
+  verbose: console.log, // Optional: helps debug
 })
+
+// Enable Write-Ahead Logging (WAL) for better concurrency
+// This often fixes locking issues on Windows
+db.pragma('journal_mode = WAL')
 
 export interface TestRun {
   run_id: string

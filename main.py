@@ -1,85 +1,92 @@
 import asyncio
 import sys
-import uuid
-import logging
-from typing import Optional
-import warnings
-from reports.generator import ReportGenerator
+import json
+import sqlite3
+from typing import List
 
-# Suppress the specific Windows pipe warnings
-warnings.filterwarnings("ignore", category=ResourceWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-
-# Suppress the noisy Windows cleanup warnings
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
-from ai.planner import TestPlanner
+# Import your modules
+from ai.planner import generate_test_plan
 from automation.core.runner import TestRunner
+from configs.settings import settings
+from ai.models import TestPlan, TestStep, ActionType, Role
 
-# Configure logging to show only important info
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+def load_saved_plan(test_id: int) -> TestPlan:
+    """Fetches a saved test from DB and reconstructs the Plan object."""
+    print(f"📂 Loading Saved Test ID: {test_id}...")
 
-async def run_orchestrator(intent: Optional[str] = None):
+    with sqlite3.connect(settings.DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM saved_tests WHERE id = ?", (test_id,)).fetchone()
+
+        if not row:
+            raise ValueError(f"Test ID {test_id} not found in registry.")
+
+        name = row['name']
+        steps_data = json.loads(row['steps_json'])
+
+        steps = []
+        for s in steps_data:
+            # FIX: Use the specific 'selector' and 'value' fields from the JSON
+            # We use .get() to be safe, defaulting to empty string
+            step = TestStep(
+                step_id=s['step_id'],
+                role=Role(s['role']),
+                action=ActionType(s['action']),
+                selector=s.get('selector', "") or "", # <--- READ CORRECT FIELD
+                value=s.get('value', "") or "",       # <--- READ CORRECT FIELD
+                description=s.get('description', f"Replay step {s['step_id']}")
+            )
+            steps.append(step)
+
+        return TestPlan(intent=f"Replay: {name}", steps=steps)
+
+async def run_orchestrator(intent: str, saved_test_id: int = None):
     print("\n🚀 AI-QA Orchestrator Initialized")
     print("====================================")
 
-    # 1. Get Intent
-    if not intent:
-        print("Describe your test case (e.g. 'Customer adds laptop to cart'):")
-        intent = input(">> ").strip()
-
-    if not intent:
-        print("❌ No intent provided. Exiting.")
-        return
-
-    # 2. Generate Plan (The Brain)
-    print("\n🧠 Generating Test Plan via Gemini 2.0...")
     try:
-        planner = TestPlanner()
-        plan = planner.generate_plan(intent)
-        print("   ✅ Plan Created!")
-    except Exception as e:
-        print(f"   ❌ Planning Failed: {e}")
-        return
+        if saved_test_id:
+            # --- MODE A: REPLAY SAVED TEST ---
+            plan = load_saved_plan(saved_test_id)
+            print(f"   ✅ Loaded '{plan.intent}' with {len(plan.steps)} steps.")
+        else:
+            # --- MODE B: AI GENERATION ---
+            print("\n🧠 Generating Test Plan via Gemini 2.0...")
+            plan = await generate_test_plan(intent)
+            print("   ✅ Plan Created!")
 
-    # 3. Execute Plan (The Hands)
-    print("\n🤖 Executing Automation...")
-    run_id = str(uuid.uuid4())
-    runner = TestRunner(headless=False) # Headless=False to see it run
-
-    try:
-        await runner.execute_plan(plan, run_id)
-
-        # --- Update DB Status to PASSED ---
-        # (For now, we assume if no exception was raised, it passed)
-        #Ideally, TestMemory should have an update_status method,
-        # but we can rely on logs for now.
-
-        print(f"\n✅ SUCCESS! Run ID: {run_id}")
-
-        # --- GENERATE REPORT ---
-        print("📝 Generating HTML Report...")
-        reporter = ReportGenerator()
-        reporter.generate(run_id)
+        # Execute
+        print("\n🤖 Executing Automation...")
+        runner = TestRunner(headless=False) # Run visible for demo
+        await runner.execute_plan(plan, f"RUN-{saved_test_id or 'AI'}-{asyncio.get_event_loop().time()}")
 
     except Exception as e:
         print(f"\n❌ Execution Failed: {e}")
+        # Show full traceback for debugging
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    # Allow passing intent as a command line argument
-    arg_intent = sys.argv[1] if len(sys.argv) > 1 else None
+    # Simple Argument Parsing
+    # Usage 1: python main.py "Buy a laptop"
+    # Usage 2: python main.py --run-saved 1
+
+    arg_intent = None
+    arg_saved_id = None
+
+    args = sys.argv[1:]
+    if len(args) > 0:
+        if args[0] == "--run-saved":
+            if len(args) > 1:
+                arg_saved_id = int(args[1])
+        else:
+            arg_intent = args[0]
+
+    if not arg_intent and not arg_saved_id:
+        print("Usage: python main.py '<intent>' OR python main.py --run-saved <ID>")
+        exit()
 
     try:
-        asyncio.run(run_orchestrator(arg_intent))
+        asyncio.run(run_orchestrator(arg_intent, arg_saved_id))
     except KeyboardInterrupt:
         print("\n\n⚠️  Process interrupted by user.")
-    except Exception as e:
-        # Only hide the specific Windows pipe error, SHOW everything else!
-        if "closed pipe" in str(e):
-            pass
-        else:
-            # This will verify if imports or paths are wrong
-            print(f"\n❌ FATAL ERROR: {e}")
-            import traceback
-            traceback.print_exc()

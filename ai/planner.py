@@ -1,41 +1,67 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
-
-from ai.models import TestPlan
-from ai.prompts import PLANNER_SYSTEM_PROMPT
+import json
+import google.generativeai as genai
 from configs.settings import settings
+from ai.models import TestPlan, TestStep, ActionType, Role
 
-class TestPlanner:
-    def __init__(self):
-        # Initialize Gemini with low temperature for deterministic results
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.MODEL_NAME,
-            google_api_key=settings.GOOGLE_API_KEY,
-            temperature=0.0
-        )
-        self.parser = PydanticOutputParser(pydantic_object=TestPlan)
+# Configure the AI Key
+genai.configure(api_key=settings.GOOGLE_API_KEY)
 
-    def generate_plan(self, intent: str) -> TestPlan:
-        """
-        Converts natural language intent into a structured TestPlan.
-        """
-        # Create the prompt template with the format instructions
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", PLANNER_SYSTEM_PROMPT),
-            ("user", "{intent}\n\n{format_instructions}")
-        ])
+async def generate_test_plan(intent: str) -> TestPlan:
+    print(f"   🧠 AI Thinking about: '{intent}'...")
 
-        # Chain: Prompt -> LLM -> JSON Parser
-        chain = prompt | self.llm | self.parser
+    # 1. The Prompt
+    prompt = f"""
+    You are a QA Automation Architect.
+    User Intent: "{intent}"
 
+    TASK: Create a step-by-step test plan for a web automation robot.
+
+    RULES:
+    1. Return ONLY valid JSON. No markdown, no text.
+    2. Use this schema for steps:
+       [
+         {{
+           "step_id": 1,
+           "role": "customer" (or "system"),
+           "action": "navigate" | "click" | "input" | "verify_text" | "wait",
+           "selector": "css_selector_here" (use "" for navigate/wait),
+           "value": "url_or_text_value",
+           "description": "human readable explanation"
+         }}
+       ]
+    3. For 'navigate', value is the URL.
+    4. For 'click', selector is required.
+    5. For 'input', selector and value (text to type) are required.
+    6. For 'verify_text', selector is the element to check, value is the expected text.
+    """
+
+    # 2. Call Gemini
+    model = genai.GenerativeModel(settings.MODEL_NAME)
+    response = await model.generate_content_async(prompt)
+
+    # 3. Clean and Parse JSON
+    raw_text = response.text.replace("```json", "").replace("```", "").strip()
+
+    try:
+        steps_data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        print("   ❌ AI returned invalid JSON. Fallback to empty plan.")
+        return TestPlan(intent=intent, steps=[])
+
+    # 4. Convert JSON to Pydantic Models
+    steps = []
+    for s in steps_data:
         try:
-            # Execute the chain
-            return chain.invoke({
-                "intent": intent,
-                "format_instructions": self.parser.get_format_instructions()
-            })
+            step = TestStep(
+                step_id=s['step_id'],
+                role=Role(s['role']),
+                action=ActionType(s['action']),
+                selector=s.get('selector', "") or "",
+                value=s.get('value', "") or "",
+                description=s['description']
+            )
+            steps.append(step)
         except Exception as e:
-            # In production, we would log this to a file
-            print(f"AI Planning Failed: {e}")
-            raise e
+            print(f"   ⚠️ Skipping invalid step: {e}")
+
+    return TestPlan(intent=intent, steps=steps)

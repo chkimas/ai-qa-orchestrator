@@ -1,6 +1,8 @@
 import { db, TestRun, TestLog } from '@/lib/db'
 import Link from 'next/link'
+import Image from 'next/image' // <--- Added optimized Image component
 import { notFound } from 'next/navigation'
+import SaveTestButton from '@/app/components/SaveTestButton'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -48,6 +50,7 @@ export default async function RunDetailsPage({ params }: PageProps) {
                 ID: {run.run_id}
               </p>
             </div>
+            <SaveTestButton runId={run.run_id} />
             <div
               className={`px-4 py-2 rounded-lg font-bold text-sm tracking-wide uppercase
               ${
@@ -61,6 +64,7 @@ export default async function RunDetailsPage({ params }: PageProps) {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
               Business Intent
             </h3>
+            {/* FIX 1: Escaped quotes (&quot;) */}
             <p className="text-lg text-slate-800 bg-slate-50 p-4 rounded-lg border border-slate-100">
               &quot;{run.intent}&quot;
             </p>
@@ -71,56 +75,86 @@ export default async function RunDetailsPage({ params }: PageProps) {
         <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Step-by-Step Execution</h2>
 
-          {logs.map(log => (
-            <div
-              key={log.id}
-              className={`relative pl-8 border-l-2 ${
-                log.status === 'FAILED' ? 'border-red-300' : 'border-slate-200'
-              }`}
-            >
-              {/* Timeline Dot */}
+          {logs.map(log => {
+            // Extract image if present
+            const imgMatch = log.details.match(/IMG:([\w\-\.]+)/)
+            const screenshotUrl = imgMatch ? `/screenshots/${imgMatch[1]}` : null
+            // Clean details text by removing the IMG tag
+            const cleanDetails = log.details.replace(/\| IMG:[\w\-\.]+/, '').trim()
+
+            return (
               <div
-                className={`absolute -left-2.25 top-4 w-4 h-4 rounded-full border-2 border-white
-                ${
-                  log.status === 'PASSED'
-                    ? 'bg-green-500'
-                    : log.status === 'FAILED'
-                    ? 'bg-red-500'
-                    : 'bg-blue-500'
+                key={log.id}
+                className={`relative pl-8 border-l-2 ${
+                  log.status === 'FAILED' ? 'border-red-300' : 'border-slate-200'
                 }`}
-              ></div>
-
-              <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition">
-                <div className="flex items-center gap-3 mb-2">
-                  <span
-                    className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded
+              >
+                {/* Timeline Dot */}
+                {/* FIX 2: Used standard tailwind class -left-2.25 instead of arbitrary value */}
+                <div
+                  className={`absolute -left-2.25 top-4 w-4 h-4 rounded-full border-2 border-white
                     ${
-                      log.role === 'customer'
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-purple-100 text-purple-700'
+                      log.status === 'PASSED'
+                        ? 'bg-green-500'
+                        : log.status === 'FAILED'
+                        ? 'bg-red-500'
+                        : 'bg-blue-500'
                     }`}
-                  >
-                    {log.role}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
+                ></div>
 
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-bold text-slate-700 mr-2 uppercase text-xs tracking-wider">
-                      {log.action}
+                <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded
+                        ${
+                          log.role === 'customer'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-purple-100 text-purple-700'
+                        }`}
+                    >
+                      {log.role}
                     </span>
-                    <span className="text-slate-600">{log.details}</span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
                   </div>
-                  {log.status === 'FAILED' && (
-                    <span className="text-red-600 font-bold text-sm">Failed ✗</span>
-                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-bold text-slate-700 mr-2 uppercase text-xs tracking-wider">
+                          {log.action}
+                        </span>
+                        <span className="text-slate-600">{cleanDetails}</span>
+                      </div>
+                      {log.status === 'FAILED' && (
+                        <span className="text-red-600 font-bold text-sm">Failed ✗</span>
+                      )}
+                    </div>
+
+                    {/* RENDER EVIDENCE */}
+                    {screenshotUrl && (
+                      <div className="mt-2">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">
+                          Visual Evidence
+                        </p>
+                        <a href={screenshotUrl} target="_blank" rel="noopener noreferrer">
+                          <Image
+                            src={screenshotUrl}
+                            alt="Step Screenshot"
+                            width={256} // w-64 is 256px
+                            height={144} // standard 16:9 ratio
+                            unoptimized // Required for local file serving
+                            className="w-64 rounded border border-slate-300 shadow-sm hover:scale-105 transition cursor-pointer object-cover"
+                          />
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </main>

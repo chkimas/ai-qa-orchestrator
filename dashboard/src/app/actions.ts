@@ -4,6 +4,7 @@ import { exec } from 'child_process'
 import { revalidatePath } from 'next/cache'
 import path from 'path'
 import { promisify } from 'util'
+import { db } from '@/lib/db'
 
 const execAsync = promisify(exec)
 
@@ -73,5 +74,93 @@ export async function runTest(formData: FormData): Promise<RunTestResult> {
     }
 
     return { success: false, message: errorMessage }
+  }
+}
+
+export async function saveRunToRegistry(runId: string, name: string) {
+  console.log(`💾 Attempting to save run: ${runId}`) // <--- DEBUG LOG
+
+  try {
+    // 1. Get the Run Intent
+    const run = db.prepare('SELECT intent FROM test_runs WHERE run_id = ?').get(runId) as
+      | { intent: string }
+      | undefined
+
+    if (!run) {
+      console.error(`❌ Run ID ${runId} not found in DB`) // <--- DEBUG LOG
+      throw new Error(`Run ID ${runId} not found`)
+    }
+
+    // 2. Get the Steps (Logs)
+    const logs = db
+      .prepare(
+        `
+        SELECT step_id, role, action, selector, value, details as description
+        FROM logs
+        WHERE run_id = ? AND status = 'PASSED' AND action != 'screenshot'
+        ORDER BY step_id ASC
+    `
+      )
+      .all(runId)
+
+    console.log(`   found ${logs.length} passed steps to save.`) // <--- DEBUG LOG
+
+    if (logs.length === 0) {
+      throw new Error('No successful steps found in this run. Cannot save empty test.')
+    }
+
+    // 3. Serialize
+    const stepsJson = JSON.stringify(logs)
+
+    // 4. Insert
+    const info = db
+      .prepare('INSERT INTO saved_tests (name, intent, steps_json) VALUES (?, ?, ?)')
+      .run(name, run.intent, stepsJson)
+
+    console.log(`   ✅ Inserted row ID: ${info.lastInsertRowid}`) // <--- DEBUG LOG
+
+    revalidatePath('/registry')
+    return { success: true, message: 'Test Saved to Registry!' }
+  } catch (error: unknown) {
+    console.error('Save Failed:', error)
+
+    let errorMessage = 'An unknown error occurred'
+    if (error instanceof Error) {
+      errorMessage = error.message
+    }
+
+    return { success: false, message: errorMessage }
+  }
+}
+
+export async function runSavedTest(testId: number) {
+  try {
+    const projectRoot = path.resolve(process.cwd(), '..')
+    const isWindows = process.platform === 'win32'
+    const venvPython = path.join(
+      projectRoot,
+      'venv',
+      isWindows ? 'Scripts' : 'bin',
+      isWindows ? 'python.exe' : 'python'
+    )
+
+    // COMMAND: python main.py --run-saved 1
+    const command = `"${venvPython}" -u main.py --run-saved ${testId}`
+
+    console.log(`🚀 Replaying Test ID ${testId}: ${command}`)
+
+    // Execute with UTF-8 support
+    // We don't await the output here because we want to return immediately
+    // and let the user watch the run appear in the dashboard.
+    execAsync(command, {
+      cwd: projectRoot,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    })
+
+    // We return success immediately so the UI doesn't freeze
+    return { success: true, message: 'Replay started! Check Dashboard.' }
+  } catch (error: unknown) {
+    console.error('Replay Failed:', error)
+    return { success: false, message: 'Failed to start replay' }
   }
 }
