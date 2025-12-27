@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 interface PageProps {
-  // In Next.js 15, params is a Promise!
   params: Promise<{ id: string }>
 }
 

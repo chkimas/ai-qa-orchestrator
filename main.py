@@ -67,13 +67,19 @@ async def run_orchestrator(intent: Optional[str] = None):
         print(f"\n❌ Execution Failed: {e}")
 
 if __name__ == "__main__":
+    # Allow passing intent as a command line argument
+    arg_intent = sys.argv[1] if len(sys.argv) > 1 else None
+
     try:
-        # Allow passing intent as a command line argument
-        # Example: python main.py "Login to Facebook"
-        arg_intent = sys.argv[1] if len(sys.argv) > 1 else None
         asyncio.run(run_orchestrator(arg_intent))
     except KeyboardInterrupt:
         print("\n\n⚠️  Process interrupted by user.")
     except Exception as e:
-        # Catch-all for those annoying Windows pipe errors to hide them
-        pass
+        # Only hide the specific Windows pipe error, SHOW everything else!
+        if "closed pipe" in str(e):
+            pass
+        else:
+            # This will verify if imports or paths are wrong
+            print(f"\n❌ FATAL ERROR: {e}")
+            import traceback
+            traceback.print_exc()

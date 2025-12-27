@@ -1,5 +1,6 @@
 import { db, TestRun } from '@/lib/db'
 import Link from 'next/link'
+import NewRunModal from '@/app/components/NewRunModal'
 
 export default function Home() {
   // Fetch runs directly from DB (Server Component Magic ✨)
@@ -13,9 +14,7 @@ export default function Home() {
             <h1 className="text-3xl font-bold text-slate-900">AI-QA Dashboard</h1>
             <p className="text-slate-500">Orchestrator Control Plane</p>
           </div>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-            + New Run (Coming Soon)
-          </button>
+          <NewRunModal />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
