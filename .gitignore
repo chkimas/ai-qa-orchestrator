@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.pytest_cache/
+
+# Environment Variables (Security)
+.env
+
+# Data & Artifacts (Local DB and Screenshots shouldn't be committed)
+data/db/*.db
+data/artifacts/*
+!data/artifacts/.gitkeep
+data/logs/*.log
+
+# Playwright
+/test-results/
+/playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
