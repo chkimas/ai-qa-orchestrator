@@ -39,7 +39,7 @@
             class="flex items-start gap-4 p-4 rounded-lg border
                     {{ 'bg-red-50 border-red-200' if log.status == 'FAILED' else 'bg-white border-gray-200' }}"
           >
-            <div class="flex-shrink-0 w-24">
+            <div class="shrink-0 w-24">
               <span
                 class="inline-block px-2 py-1 text-xs font-bold rounded uppercase w-full text-center
                             {{ 'bg-blue-100 text-blue-800' if log.role == 'customer' else 'bg-purple-100 text-purple-800' }}"
@@ -48,7 +48,7 @@
               </span>
             </div>
 
-            <div class="flex-grow">
+            <div class="grow">
               <div class="flex justify-between items-center mb-1">
                 <span class="font-bold text-gray-700"
                   >Step {{ log.step_id }}: {{ log.action }}</span
@@ -58,7 +58,7 @@
               <p class="text-gray-600">{{ log.details }}</p>
             </div>
 
-            <div class="flex-shrink-0">
+            <div class="shrink-0">
               {% if log.status == 'PASSED' %}
               <span class="text-green-500 text-xl">✓</span>
               {% else %}
