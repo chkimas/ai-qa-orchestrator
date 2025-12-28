@@ -1,67 +1,73 @@
 import json
 import google.generativeai as genai
+from groq import AsyncGroq
 from configs.settings import settings
 from ai.models import TestPlan, TestStep, ActionType, Role
 
-# Configure the AI Key
-genai.configure(api_key=settings.GOOGLE_API_KEY)
+# Configure Clients
+if settings.GOOGLE_API_KEY:
+    genai.configure(api_key=settings.GOOGLE_API_KEY)
+
+groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 
 async def generate_test_plan(intent: str) -> TestPlan:
-    print(f"   🧠 AI Thinking about: '{intent}'...")
+    provider = settings.AI_PROVIDER
+    print(f"   🧠 AI ({provider.upper()}) Thinking about: '{intent}'...")
 
-    # 1. The Prompt (Updated with 'Unified Context' Rules)
-    prompt = f"""
+    # Shared System Prompt
+    system_prompt = """
     You are a QA Automation Architect.
-    User Intent: "{intent}"
-
-    TASK: Create a step-by-step test plan for a web automation robot.
 
     ⚠️ CRITICAL CONTEXT RULES:
-    1. **Unified Context:** ALWAYS use "customer" for actions that happen in the browser (navigate, click, input, verify_text, wait).
-    2. **NO 'system' for Browser Checks:** Do NOT use "system" for `verify_text` or `wait`. If the user is logged in, the verification MUST happen as "customer" to see the page.
-    3. Only use "system" if you need a completely clean, fresh browser window (unlikely).
+    1. **Unified Context:** ALWAYS use "customer" for actions that happen in the browser.
+    2. **NO 'system' for Browser Checks:** Do NOT use "system" for `verify_text`.
 
     OUTPUT RULES:
-    1. Return ONLY valid JSON. No markdown, no text.
-    2. Use this schema for steps:
-       [
-         {{
-           "step_id": 1,
-           "role": "customer",  <-- ALMOST ALWAYS "customer"
-           "action": "navigate" | "click" | "input" | "verify_text" | "wait",
-           "selector": "css_selector_here" (use "" for navigate/wait),
-           "value": "url_or_text_value",
-           "description": "human readable explanation"
-         }}
-       ]
-    3. For 'navigate', value is the URL.
-    4. For 'click', selector is required.
-    5. For 'input', selector and value (text to type) are required.
-    6. For 'verify_text', selector is the element to check, value is the expected text.
+    1. Return ONLY valid JSON. No markdown, no explanations.
+    2. Schema: [{"step_id": 1, "role": "customer", "action": "navigate", "selector": "", "value": "url", "description": "desc"}]
     """
 
-    # 2. Call Gemini
-    try:
-        model = genai.GenerativeModel(settings.MODEL_NAME)
-        response = await model.generate_content_async(prompt)
+    user_prompt = f"""
+    User Intent: "{intent}"
+    TASK: Create a step-by-step test plan for a web automation robot using the rules above.
+    """
 
-        # 3. Clean and Parse JSON
-        # Handle potential markdown wrappers if the AI forgets the rule
-        raw_text = response.text.replace("```json", "").replace("```", "").strip()
-        steps_data = json.loads(raw_text)
+    try:
+        raw_text = ""
+
+        # --- ENGINE A: GOOGLE GEMINI ---
+        if provider == "google":
+            # UPDATED: Now uses settings.GOOGLE_MODEL
+            model = genai.GenerativeModel(settings.GOOGLE_MODEL)
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            response = await model.generate_content_async(full_prompt)
+            raw_text = response.text
+
+        # --- ENGINE B: GROQ (LLAMA 3) ---
+        elif provider == "groq":
+            completion = await groq_client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                stream=False
+            )
+            raw_text = completion.choices[0].message.content
+
+        clean_json = raw_text.replace("```json", "").replace("```", "").strip()
+        steps_data = json.loads(clean_json)
 
     except Exception as e:
-        print(f"   ❌ AI Planning Failed: {e}")
+        print(f"   ❌ AI Planning Failed ({provider}): {e}")
         return TestPlan(intent=intent, steps=[])
 
-    # 4. Convert JSON to Pydantic Models
     steps = []
     for s in steps_data:
         try:
-            # Safe role conversion (default to customer if AI hallucinates)
             role_str = s.get('role', 'customer').lower()
-            if role_str not in ['customer', 'system', 'admin']:
-                role_str = 'customer'
+            if role_str not in ['customer', 'system']: role_str = 'customer'
 
             step = TestStep(
                 step_id=s['step_id'],
@@ -69,7 +75,7 @@ async def generate_test_plan(intent: str) -> TestPlan:
                 action=ActionType(s['action']),
                 selector=s.get('selector', "") or "",
                 value=s.get('value', "") or "",
-                description=s.get('description', "No description provided")
+                description=s.get('description', "No description")
             )
             steps.append(step)
         except Exception as e:

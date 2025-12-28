@@ -10,14 +10,24 @@ load_dotenv(dotenv_path=ENV_FILE_PATH)
 
 class Settings(BaseSettings):
     APP_ENV: str = "development"
-    GOOGLE_API_KEY: str = Field(..., description="Gemini API Key")
-    MODEL_NAME: str = "gemini-flash-latest"
 
-    # Database
+    # --- AI SWITCHING ---
+    # Set to "google" or "groq"
+    AI_PROVIDER: str = "groq"
+
+    # --- GOOGLE CONFIG ---
+    GOOGLE_API_KEY: str = Field(..., description="Gemini API Key")
+    # RENAMED: MODEL_NAME -> GOOGLE_MODEL
+    GOOGLE_MODEL: str = "gemini-1.5-flash"
+
+    # --- GROQ CONFIG ---
+    GROQ_API_KEY: str = Field(default="", description="Groq API Key")
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    # --- DATABASE ---
     DB_PATH: str = "data/db/orchestrator.db"
 
-    # --- NEW: Save images directly to Dashboard's public folder ---
-    # This allows localhost:3000/screenshots/filename.png to work
+    # --- DASHBOARD INTEGRATION ---
     SCREENSHOTS_DIR: Path = BASE_DIR / "dashboard" / "public" / "screenshots"
 
     model_config = SettingsConfigDict(
