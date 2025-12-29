@@ -21,6 +21,7 @@ async def generate_test_plan(intent: str) -> TestPlan:
     ⚠️ CRITICAL CONTEXT RULES:
     1. **Unified Context:** ALWAYS use "customer" for actions that happen in the browser.
     2. **NO 'system' for Browser Checks:** Do NOT use "system" for `verify_text`.
+    3. **STRICT ACTIONS:** You must ONLY use these exact action names: 'navigate', 'click', 'input', 'wait', 'verify_text'. DO NOT use 'send_keys', 'type', or 'fill'.
 
     OUTPUT RULES:
     1. Return ONLY valid JSON. No markdown, no explanations.

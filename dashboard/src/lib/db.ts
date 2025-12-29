@@ -27,6 +27,8 @@ export interface TestLog {
   role: string
   action: string
   status: string
-  details: string
+  description: string
+  selector?: string // optional
+  value?: string // optional
   timestamp: string
 }

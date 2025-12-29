@@ -164,3 +164,20 @@ export async function runSavedTest(testId: number) {
     return { success: false, message: 'Failed to start replay' }
   }
 }
+
+export async function deleteRun(runId: string) {
+  try {
+    // 1. Delete logs associated with the run first (Foreign Key cleanup)
+    db.prepare('DELETE FROM logs WHERE run_id = ?').run(runId)
+
+    // 2. Delete the run itself
+    db.prepare('DELETE FROM test_runs WHERE run_id = ?').run(runId)
+
+    // 3. Refresh the page data
+    revalidatePath('/')
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to delete run:', error)
+    return { success: false, error: 'Failed to delete' }
+  }
+}
