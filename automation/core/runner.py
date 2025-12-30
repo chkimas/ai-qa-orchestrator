@@ -1,25 +1,29 @@
 import asyncio
 import logging
 from typing import Optional
-from playwright.async_api import async_playwright, Page, BrowserContext
+from playwright.async_api import async_playwright, Page, BrowserContext, expect
+
 from ai.models import TestPlan, TestStep, ActionType, ElementFingerprint
 from ai.healer import heal_selector
-from data.memory import create_run, save_run_log, update_run_status
+from data.supabase_client import db_bridge
 from configs.settings import settings
 
-# Setup Logger
 logger = logging.getLogger("orchestrator.runner")
 
 class AutomationRunner:
-    def __init__(self):
+    def __init__(self, run_id: str):
+        self.run_id = run_id
         self.browser_context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self._playwright = None
 
-    async def start_browser(self, headless: bool = False):
+    async def start_browser(self, headless: bool = True):
+        """Starts Playwright with stealth settings."""
         self._playwright = await async_playwright().start()
-        # Launch headed so you can see the browser open
-        browser = await self._playwright.chromium.launch(headless=headless, slow_mo=500)
+        browser = await self._playwright.chromium.launch(
+            headless=headless,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+        )
 
         self.browser_context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
@@ -35,101 +39,97 @@ class AutomationRunner:
             await self._playwright.stop()
         logger.info("Browser stopped")
 
-    async def execute_plan(self, plan: TestPlan, run_id: str):
-        create_run(run_id, plan.intent)
-
+    async def execute_plan(self, plan: TestPlan):
+        """Main execution loop with live cloud streaming."""
         if not self.page:
-            await self.start_browser(headless=False)
+            await self.start_browser(headless=True)
 
-        logger.info(f"Starting Run: {run_id} | Steps: {len(plan.steps)}")
+        logger.info(f"Starting Run: {self.run_id} | Steps: {len(plan.steps)}")
 
-        run_failed = False
+        try:
+            for step in plan.steps:
+                await self.execute_step(step)
 
-        for step in plan.steps:
-            try:
-                await self.execute_step(step, run_id)
+            db_bridge.update_run_status(self.run_id, "PASSED")
+        except Exception as e:
+            logger.error(f"Plan execution halted: {e}")
+            db_bridge.update_run_status(self.run_id, "FAILED")
+        finally:
+            await self.stop_browser()
 
-                save_run_log(
-                    run_id=run_id,
-                    step_id=step.step_id,
-                    role=step.role.value,
-                    action=step.action.value,
-                    status="PASSED",
-                    details=step.description,
-                    selector=step.selector,
-                    value=step.value
-                )
+    async def execute_step(self, step: TestStep):
+        """Executes a step with 3-tier fallback: Primary -> Fingerprint -> AI Heal."""
+        role = step.role.value
+        action_val = step.action.value
 
-            except Exception as e:
-                logger.error(f"Step {step.step_id} Failed: {e}")
-                run_failed = True
-
-                # --- 📸 FIX: Use Absolute Path from Settings ---
-                screenshot_name = f"{run_id}_step_{step.step_id}_FAILED.png"
-                # Use the Path object from settings to guarantee correct location
-                screenshot_path = settings.SCREENSHOTS_DIR / screenshot_name
-
-                logger.info(f"   📸 Saving screenshot to: {screenshot_path}")
-                await self.page.screenshot(path=str(screenshot_path))
-
-                # Log failure
-                save_run_log(
-                    run_id=run_id,
-                    step_id=step.step_id,
-                    role=step.role.value,
-                    action=step.action.value,
-                    status="FAILED",
-                    details=f"Error: {str(e)}",
-                    selector=step.selector,
-                    value=step.value
-                )
-
-                # Log the screenshot reference so UI can find it
-                save_run_log(
-                    run_id=run_id,
-                    step_id=step.step_id + 999,
-                    role="system",
-                    action="screenshot",
-                    status="PASSED",
-                    details=f"IMG: {screenshot_name}",
-                    selector="",
-                    value=""
-                )
-                break
-
-        final_status = "FAILED" if run_failed else "PASSED"
-        update_run_status(run_id, final_status)
-
-        await self.stop_browser()
-
-    async def execute_step(self, step: TestStep, run_id: str):
-        logger.info(f"▶ Step {step.step_id}: {step.action.value}")
+        db_bridge.log_step(
+            run_id=self.run_id, role=role, action=action_val,
+            status="RUNNING", details=step.description,
+            selector=step.selector, value=step.value
+        )
 
         try:
             await self._perform_action(step.action, step.selector, step.value)
 
-            # Record fingerprint after successful interaction for future healing
+            # Capture Fingerprint for future self-healing
             if step.selector and step.action in [ActionType.CLICK, ActionType.INPUT]:
                 step.fingerprint = await self._capture_fingerprint(step.selector)
 
+            db_bridge.log_step(
+                run_id=self.run_id, role=role, action=action_val,
+                status="PASSED", details="Successfully executed",
+                selector=step.selector, value=step.value
+            )
+
         except Exception as e:
-            if step.action not in [ActionType.CLICK, ActionType.INPUT]:
-                raise e
+            logger.warning(f"Step failed. Starting healing protocol...")
+            db_bridge.log_step(
+                run_id=self.run_id, role="system", action="healing",
+                status="RUNNING", details=f"Selector {step.selector} failed. Healing..."
+            )
 
-            if step.fingerprint:
-                logger.warning(f"🩹 Primary selector failed. Attempting Fingerprint match...")
-                found_selector = await self._find_by_fingerprint(step.fingerprint)
-                if found_selector:
-                    await self._perform_action(step.action, found_selector, step.value)
-                    return
+            healed_selector = await self._try_healing(step, e)
 
-            # 🔴 ATTEMPT 3: Full AI Healing
-            new_selector = await heal_selector(self.page, step.selector, step.description)
-            if new_selector:
-                await self._perform_action(step.action, new_selector, step.value)
-                step.selector = new_selector
+            if healed_selector:
+                db_bridge.log_step(
+                    run_id=self.run_id, role=role, action=action_val,
+                    status="PASSED", details=f"Healed using: {healed_selector}",
+                    selector=healed_selector, value=step.value
+                )
             else:
+                self._handle_failure(step, e)
                 raise e
+
+    async def _try_healing(self, step: TestStep, original_error: Exception) -> Optional[str]:
+        """Tries Fingerprint match then AI Healing."""
+        # Fingerprint Fallback
+        if step.fingerprint:
+            found_selector = await self._find_by_fingerprint(step.fingerprint)
+            if found_selector:
+                await self._perform_action(step.action, found_selector, step.value)
+                return found_selector
+
+        # AI Healing Fallback
+        new_selector = await heal_selector(self.page, step.selector, step.description)
+        if new_selector:
+            await self._perform_action(step.action, new_selector, step.value)
+            return new_selector
+
+        return None
+
+    async def _perform_action(self, action: ActionType, selector: str, value: str):
+        timeout = 5000 # 5s timeout to trigger healing faster
+
+        if action == ActionType.NAVIGATE:
+            await self.page.goto(value, wait_until="networkidle")
+        elif action == ActionType.CLICK:
+            await self.page.click(selector, timeout=timeout)
+        elif action == ActionType.INPUT:
+            await self.page.fill(selector, value, timeout=timeout)
+        elif action == ActionType.WAIT:
+            await self.page.wait_for_timeout(int(value or 1000))
+        elif action == ActionType.VERIFY_TEXT:
+            await expect(self.page.locator("body")).to_contain_text(value, timeout=timeout)
 
     async def _capture_fingerprint(self, selector: str) -> Optional[ElementFingerprint]:
         try:
@@ -144,37 +144,14 @@ class AutomationRunner:
         except: return None
 
     async def _find_by_fingerprint(self, fp: ElementFingerprint) -> Optional[str]:
-        """Finds element by visual coordinates if ID/CSS changed."""
         try:
-            # Try to click at the exact last known X/Y coordinates
             await self.page.mouse.click(fp.location['x'] + 5, fp.location['y'] + 5)
-            return f"point:{fp.location['x']},{fp.location['y']}"
+            return f"coordinates:{fp.location['x']},{fp.location['y']}"
         except: return None
 
-    async def _perform_action(self, action: ActionType, selector: str, value: str):
-        """Helper to run the actual Playwright command. Used by execute_step and the healer."""
-
-        # Short timeout for the initial try so we trigger healing faster (e.g., 4s instead of 30s)
-        # But we default to standard timeout if not specified
-        timeout = 5000
-
-        if action == ActionType.NAVIGATE:
-            await self.page.goto(value)
-
-        elif action == ActionType.CLICK:
-            await self.page.click(selector, timeout=timeout)
-
-        elif action == ActionType.INPUT:
-            await self.page.fill(selector, value, timeout=timeout)
-
-        elif action == ActionType.WAIT:
-            await self.page.wait_for_timeout(int(value or 1000))
-
-        elif action == ActionType.VERIFY_TEXT:
-            if selector and selector != 'body':
-                content = await self.page.text_content(selector)
-            else:
-                content = await self.page.content()
-
-            if value not in (content or ""):
-                raise AssertionError(f"Expected text '{value}' not found")
+    def _handle_failure(self, step: TestStep, e: Exception):
+        db_bridge.log_step(
+            run_id=self.run_id, role=step.role.value, action=step.action.value,
+            status="FAILED", details=str(e),
+            selector=step.selector, value=step.value
+        )

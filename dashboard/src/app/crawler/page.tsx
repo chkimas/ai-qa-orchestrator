@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { runScoutTest, getRunLogs, getReportContent, getCrawlHistory } from '../actions'
+import { runScoutMission, getCrawlHistory, getReportContent } from '@/lib/actions'
+import { supabase } from '@/lib/supabase'
 import { Terminal, Play, RotateCcw, Lock, Globe, History, Download } from 'lucide-react'
+
+interface SupabaseLogPayload {
+  action: string
+  status: string
+  description?: string
+  details?: string
+}
 
 interface CrawlHistoryItem {
   id: number
@@ -30,27 +38,28 @@ export default function CrawlerPage() {
 
   const refreshHistory = async () => {
     const res = await getCrawlHistory()
-    if (res.success) setHistory(res.history as CrawlHistoryItem[])
+    if (res.success) setHistory(res.history)
   }
 
   const handleDeploy = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (status === 'running') return
 
-    setLogs('')
+    setLogs('📡 Establishing uplink to Cloud Worker...\n')
     setReportFile(null)
     setStatus('running')
 
     try {
-      const result = await runScoutTest(url, username, password)
+      const result = await runScoutMission(url)
       if (result.success && result.runId) {
         setRunId(result.runId)
       } else {
-        throw new Error(result.message || 'Failed to start')
+        throw new Error(result.error || 'Failed to start')
       }
-    } catch {
+    } catch (err: unknown) {
       setStatus('idle')
-      alert('Failed to deploy scout')
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setLogs(prev => prev + `❌ ERROR: ${msg}\n`)
     }
   }
 
@@ -78,26 +87,39 @@ export default function CrawlerPage() {
   }
 
   useEffect(() => {
-    if (!runId || status === 'complete') return
+    if (!runId || status !== 'running') return
 
-    const interval = setInterval(async () => {
-      const result = await getRunLogs(runId)
-      setLogs(result.logs)
+    // Subscribe to Supabase execution_logs for this run
+    const channel = supabase
+      .channel(`scout-${runId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'execution_logs',
+          filter: `run_id=eq.${runId}`,
+        },
+        payload => {
+          const newLog = payload.new as SupabaseLogPayload
+          const timestamp = new Date().toLocaleTimeString()
+          const logLine = `[${timestamp}] ${newLog.action.toUpperCase()}: ${
+            newLog.description || newLog.details
+          }\n`
 
-      if (result.logs.includes('Scout Mission Complete')) {
-        setStatus('complete')
-        const match = result.logs.match(/Report:\s+(QA_REPORT_[\w.-]+\.md)/)
-        if (match) setReportFile(match[1])
-        clearInterval(interval)
-      }
+          setLogs(prev => prev + logLine)
 
-      if (result.logs.includes('Process exited')) {
-        setStatus('complete')
-        clearInterval(interval)
-      }
-    }, 500)
+          // Check for completion signals in the logs
+          if (newLog.status === 'COMPLETED' || newLog.details?.includes('Scout Mission Complete')) {
+            setStatus('complete')
+          }
+        }
+      )
+      .subscribe()
 
-    return () => clearInterval(interval)
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [runId, status])
 
   useEffect(() => {

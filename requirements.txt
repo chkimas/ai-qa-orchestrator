@@ -1,15 +1,25 @@
-# Automation & Web
-playwright>=1.40.0
+# --- Automation & Web ---
+playwright==1.49.0
+pytest-playwright==0.6.2
 
-# Data Validation & Typing
-pydantic>=2.5.0
-pydantic-settings>=2.0.0
+# --- Data Validation & Typing ---
+pydantic==2.10.4
+pydantic-settings==2.7.0
 
-# AI & Orchestration
-google-genai>=0.1.0
-groq>=0.4.0
+# --- AI & Orchestration ---
+google-genai==0.3.0
+groq==0.13.0
+openai==1.58.1
+anthropic==0.45.2
 
-# Utilities
-python-dotenv>=1.0.0
-pytest>=7.4.0
-tenacity>=8.2.0
+# --- Utilities ---
+python-dotenv==1.0.1
+pytest==8.3.4
+tenacity==9.0.0
+cryptography==44.0.0
+
+# --- Web Server (Required for Cloud Worker) ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.12
+supabase==2.10.0

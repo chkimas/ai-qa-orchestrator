@@ -1,17 +1,30 @@
 'use client'
-
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ExecutionLog } from '@/types/database'
-import StepCard from '@/components/StepCard'
+import StepCard from './StepCard'
 
-interface LiveLogViewerProps {
-  runId: string
-  initialLogs: ExecutionLog[]
+interface LogEntry {
+  id: number
+  run_id: string
+  step_id: number
+  role: string
+  action: string
+  status: string
+  description: string
+  timestamp: string
+  details?: string
+  selector?: string
+  value?: string
 }
 
-export default function LiveLogViewer({ runId, initialLogs }: LiveLogViewerProps) {
-  const [logs, setLogs] = useState<ExecutionLog[]>(initialLogs)
+export default function LiveLogViewer({
+  runId,
+  initialLogs,
+}: {
+  runId: string
+  initialLogs: LogEntry[]
+}) {
+  const [logs, setLogs] = useState<LogEntry[]>(initialLogs)
 
   useEffect(() => {
     const channel = supabase
@@ -25,7 +38,7 @@ export default function LiveLogViewer({ runId, initialLogs }: LiveLogViewerProps
           filter: `run_id=eq.${runId}`,
         },
         payload => {
-          const newLog = payload.new as ExecutionLog
+          const newLog = payload.new as LogEntry
           setLogs(prev => [...prev, newLog])
         }
       )
@@ -39,7 +52,9 @@ export default function LiveLogViewer({ runId, initialLogs }: LiveLogViewerProps
   return (
     <div className="space-y-4">
       {logs.map(log => (
-        <StepCard key={log.id} step={log} />
+        <div key={log.id}>
+          <StepCard step={log} />
+        </div>
       ))}
     </div>
   )

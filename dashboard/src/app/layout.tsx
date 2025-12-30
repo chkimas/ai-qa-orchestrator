@@ -1,29 +1,26 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
-import Sidebar from '@/app/components/Sidebar'
-
-const inter = Inter({ subsets: ['latin'] })
+import { ClerkProvider } from '@clerk/nextjs'
+import Sidebar from '@/components/Sidebar'
 
 export const metadata: Metadata = {
-  title: 'AI QA Orchestrator',
-  description: 'Self-Healing Test Automation Dashboard',
+  title: 'VANGUARD | AI-QA Orchestrator',
+  description: 'Self-Healing Cloud-Hybrid Test Automation Dashboard',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      {/* 1. 'flex': Makes Sidebar and Content sit side-by-side
-        2. 'h-screen': Ensures full height
-        3. 'overflow-hidden': Prevents double scrollbars
-      */}
-      <body className={`${inter.className} bg-slate-950 flex h-screen overflow-hidden`}>
-        {/* Sidebar is no longer fixed, it sits in the flex flow */}
-        <Sidebar />
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col h-full relative overflow-y-auto">{children}</div>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" className="dark">
+        <body className="bg-slate-950 text-slate-50 antialiased overflow-hidden">
+          <div className="flex h-screen w-screen overflow-hidden">
+            <Sidebar />
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(ellipse_at_top_right,var(--tw-gradient-stops))] from-slate-900/20 via-slate-950 to-slate-950">
+              {children}
+            </div>
+          </div>
+        </body>
+      </html>
+    </ClerkProvider>
   )
 }
