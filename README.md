@@ -24,8 +24,8 @@ An autonomous, full-stack QA platform that leverages **Generative AI** to map, t
 ## 🛠️ Technical Stack
 
 - **Engine:** Python 3.11+, Playwright (Chromium)
-- **Brain:** Google Gemini 2.0 Flash (`google-genai`)
-- **Frontend:** Next.js 14, Tailwind CSS, Lucide Icons
+- **Brain:** Google Gemini 2.0 Flash (`google-genai`) / Groq (Llama-3)
+- **Frontend:** Next.js 16, Tailwind CSS, Lucide Icons
 - **Infrastructure:** Node.js Server Actions (Child Process Orchestration), SQLite
 
 ---
