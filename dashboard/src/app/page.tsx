@@ -8,8 +8,7 @@ export default async function Home() {
   const runs = db.prepare('SELECT * FROM test_runs ORDER BY created_at DESC').all() as TestRun[]
 
   return (
-    // Updated: Dark background for the main area
-    <main className="p-8 max-w-6xl mx-auto min-h-screen bg-slate-950 text-slate-200">
+    <main className="p-8 mx-auto min-h-screen bg-slate-950 text-slate-200">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div>
@@ -24,7 +23,7 @@ export default async function Home() {
 
       {/* Table Card - Dark Mode */}
       <div className="bg-slate-900 rounded-xl shadow-xl border border-slate-800 overflow-hidden">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full table-fixed text-left border-collapse">
           <thead className="bg-slate-950 border-b border-slate-800">
             <tr>
               <th className="p-4 font-semibold text-slate-400 text-xs uppercase tracking-wider w-32">
@@ -44,7 +43,6 @@ export default async function Home() {
           <tbody className="divide-y divide-slate-800">
             {runs.map(run => (
               <tr key={run.run_id} className="hover:bg-slate-800/50 transition-colors group">
-                {/* Status Badge - Updated for Dark Mode Contrast */}
                 <td className="p-4">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border shadow-sm
@@ -60,12 +58,11 @@ export default async function Home() {
                   </span>
                 </td>
 
-                {/* Intent Column - Truncated with Tooltip */}
                 <td className="p-4">
                   <Link
                     href={`/runs/${run.run_id}`}
-                    title={run.intent} // <--- Native Browser Tooltip
-                    className="font-medium text-slate-200 hover:text-blue-400 flex items-center gap-2 transition-colors max-w-md"
+                    title={run.intent}
+                    className="font-medium text-slate-200 hover:text-blue-400 flex items-center gap-2 transition-colors w-full"
                   >
                     <span className="truncate">{run.intent}</span>
                   </Link>

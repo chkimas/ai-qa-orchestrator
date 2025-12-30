@@ -6,9 +6,10 @@ pydantic>=2.5.0
 pydantic-settings>=2.0.0
 
 # AI & Orchestration
-langchain>=0.1.0
-langchain-google-genai>=0.0.1
+google-genai>=0.1.0
+groq>=0.4.0
 
 # Utilities
 python-dotenv>=1.0.0
 pytest>=7.4.0
+tenacity>=8.2.0

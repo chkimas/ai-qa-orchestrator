@@ -1,22 +1,31 @@
 import Database from 'better-sqlite3'
 import path from 'path'
+import fs from 'fs'
 
-// Navigate out of 'dashboard' to the project root to find the DB
-const dbPath = path.join(process.cwd(), '..', 'data', 'db', 'orchestrator.db')
+// 1. Resolve path relative to the "dashboard" folder where you run 'npm run dev'
+// We assume process.cwd() is '.../ai-qa-orchestrator/dashboard'
+const dbPath = path.resolve(process.cwd(), '..', 'data', 'db', 'orchestrator.db')
 
+console.log(`🔌 Next.js Database Path: ${dbPath}`)
+
+// 2. SELF-HEALING: Create the directory if it doesn't exist
+const dbDir = path.dirname(dbPath)
+if (!fs.existsSync(dbDir)) {
+  console.log(`🛠️ Creating missing database directory: ${dbDir}`)
+  fs.mkdirSync(dbDir, { recursive: true })
+}
+
+// 3. Initialize Connection
 export const db = new Database(dbPath, {
+  // verbose: console.log, // Uncomment for SQL debugging
   fileMustExist: false,
-  verbose: console.log, // Optional: helps debug
 })
 
-// Enable Write-Ahead Logging (WAL) for better concurrency
-// This often fixes locking issues on Windows
-db.pragma('journal_mode = WAL')
-
+// 4. Shared Types
 export interface TestRun {
   run_id: string
   intent: string
-  status: string
+  status: 'RUNNING' | 'PASSED' | 'FAILED'
   created_at: string
 }
 
@@ -27,8 +36,9 @@ export interface TestLog {
   role: string
   action: string
   status: string
-  description: string
-  selector?: string // optional
-  value?: string // optional
+  details: string
+  selector?: string
+  value?: string
   timestamp: string
+  description?: string
 }

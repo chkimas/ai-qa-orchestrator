@@ -15,7 +15,7 @@ export default async function RegistryPage() {
     .all() as SavedTest[]
 
   return (
-    <main className="p-8 max-w-7xl mx-auto min-h-screen bg-slate-950 text-slate-200">
+    <main className="w-full p-8 mx-auto min-h-screen bg-slate-950 text-slate-200">
       {/* Header */}
       <div className="flex justify-between items-end mb-10 border-b border-slate-900 pb-6">
         <div>
@@ -23,7 +23,7 @@ export default async function RegistryPage() {
             <Save className="w-8 h-8 text-purple-500" />
             Test Registry
           </h1>
-          <p className="text-slate-400 mt-2 text-sm max-w-xl">
+          <p className="text-slate-400 mt-2 text-sm">
             {/* FIX 1: Escaped quotes below */}
             Golden test cases saved for regression testing. These are your &quot;Source of
             Truth&quot;.

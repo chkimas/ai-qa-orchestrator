@@ -5,8 +5,15 @@ import { revalidatePath } from 'next/cache'
 import path from 'path'
 import { promisify } from 'util'
 import { db } from '@/lib/db'
+import { spawn } from 'child_process'
+import fs from 'fs'
 
 const execAsync = promisify(exec)
+
+const LOG_DIR = path.resolve(process.cwd(), '..', 'logs')
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true })
+}
 
 interface RunTestResult {
   success: boolean
@@ -15,18 +22,16 @@ interface RunTestResult {
 
 export async function runTest(formData: FormData): Promise<RunTestResult> {
   const intent = formData.get('intent') as string
+  const url = formData.get('url') as string
+  const role = formData.get('role') as string
+  const testData = formData.get('test_data') as string
 
   if (!intent) {
     return { success: false, message: 'Intent is required' }
   }
 
   try {
-    // 1. Resolve path to the Project Root (Go up one level from 'dashboard')
     const projectRoot = path.resolve(process.cwd(), '..')
-
-    // 2. Point strictly to the Virtual Environment Python executable
-    // This ensures we use the python that has LangChain & Playwright installed.
-    // NOTE: On Windows it's 'Scripts', on Mac/Linux it's usually 'bin'
     const isWindows = process.platform === 'win32'
     const venvPython = path.join(
       projectRoot,
@@ -35,101 +40,84 @@ export async function runTest(formData: FormData): Promise<RunTestResult> {
       isWindows ? 'python.exe' : 'python'
     )
 
-    // 3. Construct the secure command
-    // We wrap paths in quotes to handle spaces in your username ("Christian Kim Asilo")
-    // We execute "main.py" passing the intent as an argument
-    const command = `"${venvPython}" -u main.py "${intent}"`
+    // --- FIX: Base64 Encoding ---
+    // We package everything into a structured JSON object first
+    const payloadObj = {
+      context: {
+        baseUrl: url || 'AUTO_DISCOVER',
+        role: role || 'customer',
+        testData: testData || 'None',
+      },
+      instructions: intent,
+    }
 
-    console.log(`🚀 Triggering Orchestrator from: ${projectRoot}`)
-    console.log(`   Command: ${command}`)
+    // Convert JSON -> String -> Base64
+    // This creates a safe string like "eyJjb250ZXh0Ijp7..." with no spaces or newlines
+    const base64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64')
 
-    // 4. Execute Python Script
-    // We set 'cwd' (Current Working Directory) to projectRoot so Python imports work
+    // Pass the Base64 string to Python
+    const command = `"${venvPython}" -u main.py "${base64Payload}"`
+
+    console.log(`🚀 Triggering Orchestrator...`)
+
     const { stdout, stderr } = await execAsync(command, {
       cwd: projectRoot,
       maxBuffer: 1024 * 1024 * 5,
-      // --- CRITICAL FIX: FORCE UTF-8 ENCODING ---
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     })
 
     console.log('✅ Python Output:', stdout)
-    if (stderr) {
-      // Note: Playwright sometimes prints non-error info to stderr, so we just log it
-      console.warn('⚠️ Python Stderr:', stderr)
-    }
+    if (stderr) console.warn('⚠️ Python Stderr:', stderr)
 
-    // 5. Refresh the UI to show the new run immediately
     revalidatePath('/')
-
-    return { success: true, message: 'Test completed successfully!' }
+    return { success: true, message: 'Test Execution Completed.' }
   } catch (error: unknown) {
     console.error('❌ Execution Failed:', error)
-
-    // Type narrowing for the error object
-    let errorMessage = 'Unknown error occurred'
-    if (error instanceof Error) {
-      errorMessage = error.message
-    } else if (typeof error === 'string') {
-      errorMessage = error
-    }
-
-    return { success: false, message: errorMessage }
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' }
   }
 }
 
+// --- Registry Actions ---
+
 export async function saveRunToRegistry(runId: string, name: string) {
-  console.log(`💾 Attempting to save run: ${runId}`) // <--- DEBUG LOG
+  console.log(`💾 Attempting to save run: ${runId}`)
 
   try {
-    // 1. Get the Run Intent
     const run = db.prepare('SELECT intent FROM test_runs WHERE run_id = ?').get(runId) as
       | { intent: string }
       | undefined
 
-    if (!run) {
-      console.error(`❌ Run ID ${runId} not found in DB`) // <--- DEBUG LOG
-      throw new Error(`Run ID ${runId} not found`)
-    }
+    if (!run) throw new Error(`Run ID ${runId} not found`)
 
-    // 2. Get the Steps (Logs)
+    // Only save passed steps to create a "Golden Path"
     const logs = db
       .prepare(
         `
-        SELECT step_id, role, action, selector, value, details as description
+        SELECT step_id, role, action, selector, value, description
         FROM logs
         WHERE run_id = ? AND status = 'PASSED' AND action != 'screenshot'
         ORDER BY step_id ASC
-    `
+      `
       )
       .all(runId)
 
-    console.log(`   found ${logs.length} passed steps to save.`) // <--- DEBUG LOG
-
     if (logs.length === 0) {
-      throw new Error('No successful steps found in this run. Cannot save empty test.')
+      throw new Error('No successful steps found. Cannot save empty test.')
     }
 
-    // 3. Serialize
     const stepsJson = JSON.stringify(logs)
 
-    // 4. Insert
-    const info = db
-      .prepare('INSERT INTO saved_tests (name, intent, steps_json) VALUES (?, ?, ?)')
-      .run(name, run.intent, stepsJson)
-
-    console.log(`   ✅ Inserted row ID: ${info.lastInsertRowid}`) // <--- DEBUG LOG
+    db.prepare('INSERT INTO saved_tests (name, intent, steps_json) VALUES (?, ?, ?)').run(
+      name,
+      run.intent,
+      stepsJson
+    )
 
     revalidatePath('/registry')
     return { success: true, message: 'Test Saved to Registry!' }
   } catch (error: unknown) {
     console.error('Save Failed:', error)
-
-    let errorMessage = 'An unknown error occurred'
-    if (error instanceof Error) {
-      errorMessage = error.message
-    }
-
-    return { success: false, message: errorMessage }
+    return { success: false, message: error instanceof Error ? error.message : 'Save Failed' }
   }
 }
 
@@ -144,21 +132,16 @@ export async function runSavedTest(testId: number) {
       isWindows ? 'python.exe' : 'python'
     )
 
-    // COMMAND: python main.py --run-saved 1
     const command = `"${venvPython}" -u main.py --run-saved ${testId}`
+    console.log(`🚀 Replaying Golden Test ID ${testId}`)
 
-    console.log(`🚀 Replaying Test ID ${testId}: ${command}`)
-
-    // Execute with UTF-8 support
-    // We don't await the output here because we want to return immediately
-    // and let the user watch the run appear in the dashboard.
-    execAsync(command, {
+    // Non-blocking execution for Replays (Fire and Forget)
+    exec(command, {
       cwd: projectRoot,
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     })
 
-    // We return success immediately so the UI doesn't freeze
-    return { success: true, message: 'Replay started! Check Dashboard.' }
+    return { success: true, message: 'Replay started! Watch the Dashboard.' }
   } catch (error: unknown) {
     console.error('Replay Failed:', error)
     return { success: false, message: 'Failed to start replay' }
@@ -167,17 +150,102 @@ export async function runSavedTest(testId: number) {
 
 export async function deleteRun(runId: string) {
   try {
-    // 1. Delete logs associated with the run first (Foreign Key cleanup)
     db.prepare('DELETE FROM logs WHERE run_id = ?').run(runId)
-
-    // 2. Delete the run itself
     db.prepare('DELETE FROM test_runs WHERE run_id = ?').run(runId)
-
-    // 3. Refresh the page data
     revalidatePath('/')
     return { success: true }
   } catch (error) {
     console.error('Failed to delete run:', error)
     return { success: false, error: 'Failed to delete' }
+  }
+}
+
+export async function runScoutTest(url: string, user?: string, password?: string) {
+  const LOG_DIR = path.resolve(process.cwd(), '..', 'logs')
+  if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true })
+
+  const runId = Date.now().toString()
+  const logFile = path.join(LOG_DIR, `${runId}.log`)
+
+  const venvPath = path.resolve(process.cwd(), '..', 'venv')
+  const pythonPath =
+    process.platform === 'win32'
+      ? path.join(venvPath, 'Scripts', 'python.exe')
+      : path.join(venvPath, 'bin', 'python')
+
+  // Use venv if it exists, otherwise fallback to global 'python'
+  const cmd = fs.existsSync(pythonPath) ? pythonPath : 'python'
+
+  console.log(`🚀 Using Python: ${cmd}`)
+  // --------------------------------
+
+  const scriptPath = path.resolve(process.cwd(), '..', 'main.py')
+  const args = [scriptPath, url, '--mode', 'scout']
+  if (user) args.push('--user', user)
+  if (password) args.push('--password', password)
+
+  const pythonProcess = spawn(cmd, args, {
+    cwd: path.resolve(process.cwd(), '..'),
+    env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+  })
+
+  const logStream = fs.createWriteStream(logFile)
+  pythonProcess.stdout.pipe(logStream)
+  pythonProcess.stderr.pipe(logStream)
+
+  pythonProcess.on('close', () => logStream.end())
+
+  // Return success with runId
+  return { success: true, message: 'Scout Started', runId }
+}
+
+// --- 2. READ THE LOGS (POLLING) ---
+export async function getRunLogs(runId: string) {
+  const logFile = path.join(LOG_DIR, `${runId}.log`)
+
+  if (!fs.existsSync(logFile)) {
+    return { logs: 'Initializing Scout...' }
+  }
+
+  try {
+    const logs = fs.readFileSync(logFile, 'utf-8')
+    return { logs }
+  } catch {
+    return { logs: 'Error reading logs...' }
+  }
+}
+
+// GET REPORT CONTENT FOR DOWNLOAD
+export async function getReportContent(filename: string) {
+  try {
+    const filePath = path.resolve(process.cwd(), '..', filename)
+    if (fs.existsSync(filePath)) {
+      return { success: true, content: fs.readFileSync(filePath, 'utf-8') }
+    }
+    return { success: false, message: 'Report not found' }
+  } catch {
+    return { success: false, message: 'Error reading report' }
+  }
+}
+
+// GET CRAWL HISTORY FROM DB
+export async function getCrawlHistory() {
+  try {
+    db.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS crawl_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT,
+        report_path TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    ).run()
+
+    const history = db.prepare('SELECT * FROM crawl_history ORDER BY timestamp DESC LIMIT 8').all()
+    return { success: true, history }
+  } catch (err) {
+    console.error('History Error:', err)
+    return { success: false, history: [] }
   }
 }
