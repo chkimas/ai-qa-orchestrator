@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from playwright.async_api import async_playwright, Page, BrowserContext
-from ai.models import TestPlan, TestStep, ActionType, Role
+from ai.models import TestPlan, TestStep, ActionType, ElementFingerprint
 from ai.healer import heal_selector
 from data.memory import create_run, save_run_log, update_run_status
 from configs.settings import settings
@@ -103,59 +103,53 @@ class AutomationRunner:
         await self.stop_browser()
 
     async def execute_step(self, step: TestStep, run_id: str):
-        """Executes a single step with Self-Healing capabilities."""
         logger.info(f"▶ Step {step.step_id}: {step.action.value}")
 
-        if not self.page:
-            raise ValueError("Browser not initialized")
-
         try:
-            # 🟢 ATTEMPT 1: Execute normally
             await self._perform_action(step.action, step.selector, step.value)
 
+            # Record fingerprint after successful interaction for future healing
+            if step.selector and step.action in [ActionType.CLICK, ActionType.INPUT]:
+                step.fingerprint = await self._capture_fingerprint(step.selector)
+
         except Exception as e:
-            # If it's a verification or wait failure, we don't heal. We only heal interaction failures.
             if step.action not in [ActionType.CLICK, ActionType.INPUT]:
                 raise e
 
-            logger.warning(f"⚠️ Step failed ({e}). Initiating Self-Healing for: {step.selector}")
+            if step.fingerprint:
+                logger.warning(f"🩹 Primary selector failed. Attempting Fingerprint match...")
+                found_selector = await self._find_by_fingerprint(step.fingerprint)
+                if found_selector:
+                    await self._perform_action(step.action, found_selector, step.value)
+                    return
 
-            # 🟠 ATTEMPT 2: Self-Healing
-            new_selector = await heal_selector(
-                self.page,
-                step.selector,
-                step.description or f"{step.action.value} on {step.selector}"
+            # 🔴 ATTEMPT 3: Full AI Healing
+            new_selector = await heal_selector(self.page, step.selector, step.description)
+            if new_selector:
+                await self._perform_action(step.action, new_selector, step.value)
+                step.selector = new_selector
+            else:
+                raise e
+
+    async def _capture_fingerprint(self, selector: str) -> Optional[ElementFingerprint]:
+        try:
+            el = self.page.locator(selector).first
+            box = await el.bounding_box()
+            return ElementFingerprint(
+                tag=await el.evaluate("el => el.tagName"),
+                text=await el.inner_text(),
+                location={"x": box['x'], "y": box['y']} if box else {"x": 0, "y": 0},
+                attributes=await el.evaluate("el => Object.fromEntries(Array.from(el.attributes).map(a => [a.name, a.value]))")
             )
+        except: return None
 
-            if new_selector and new_selector != step.selector:
-                try:
-                    logger.info(f"🩹 Retrying with Healed Selector: {new_selector}")
-
-                    # Retry the action with the new selector
-                    await self._perform_action(step.action, new_selector, step.value)
-
-                    # ✅ LOG THE HEAL EVENT (So it shows in Dashboard)
-                    save_run_log(
-                        run_id=run_id,
-                        step_id=step.step_id,
-                        role="system",
-                        action="heal",
-                        status="HEALED",
-                        details=f"Healed: '{step.selector}' -> '{new_selector}'",
-                        selector=new_selector,
-                        value=step.value
-                    )
-
-                    # Update the step object in memory so subsequent logs use the correct selector
-                    step.selector = new_selector
-                    return # Exit successfully
-
-                except Exception as retry_error:
-                    logger.error(f"💀 Healed selector also failed: {retry_error}")
-                    raise retry_error # Raise the *retry* error
-
-            # If healing returned None or failed to find a better selector, raise original error
-            raise e
+    async def _find_by_fingerprint(self, fp: ElementFingerprint) -> Optional[str]:
+        """Finds element by visual coordinates if ID/CSS changed."""
+        try:
+            # Try to click at the exact last known X/Y coordinates
+            await self.page.mouse.click(fp.location['x'] + 5, fp.location['y'] + 5)
+            return f"point:{fp.location['x']},{fp.location['y']}"
+        except: return None
 
     async def _perform_action(self, action: ActionType, selector: str, value: str):
         """Helper to run the actual Playwright command. Used by execute_step and the healer."""

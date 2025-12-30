@@ -14,22 +14,19 @@ import argparse
 import time
 from dotenv import load_dotenv
 
-# Load env before imports
 load_dotenv()
 
-# --- IMPORTS ---
 from ai.planner import generate_test_plan
 from automation.core.runner import AutomationRunner
 from data.memory import init_db
-
-# New Capabilities
 from ai.crawler import AutonomousCrawler
 from ai.reporter import generate_report
+from data.ingestor import BehavioralIngestor
+from ai.prompts import CHAOS_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT
 
-# Initialize DB on startup
 init_db()
 
-# --- HELPER FUNCTIONS ---
+# --- HELPERS ---
 
 def get_saved_test_intent(test_id: int):
     try:
@@ -45,17 +42,11 @@ def get_saved_test_intent(test_id: int):
         return None
 
 def decode_payload(arg: str) -> str:
-    """
-    Decodes the Base64 JSON payload from the UI
-    OR returns the raw string if running from CLI manually.
-    """
     try:
-        # Try decoding as Base64 JSON
         decoded_bytes = base64.b64decode(arg)
         decoded_str = decoded_bytes.decode('utf-8')
         data = json.loads(decoded_str)
 
-        # If successful JSON structure, format it for the Planner Prompt
         if "context" in data and "instructions" in data:
             return f"""
             CONTEXT:
@@ -66,88 +57,70 @@ def decode_payload(arg: str) -> str:
             INSTRUCTIONS:
             {data['instructions']}
             """
-        return arg # Fallback if not our specific schema
+        return arg
     except Exception:
         return arg
 
-# --- MODE 1: SNIPER (Existing "Plan & Execute" Logic) ---
-async def run_sniper_mode(raw_input: str, run_saved_id: int = None):
-    print(f"🚀 Sniper Mode Started")
+# --- MODE 1: SNIPER (Plan & Execute) ---
+async def run_sniper_mode(raw_input: str, run_saved_id: int = None, is_chaos: bool = False):
+    mode_label = "🔥 CHAOS" if is_chaos else "🎯 SNIPER"
+    print(f"🚀 {mode_label} Mode Started")
 
-    # 1. Decode & Format Input
     formatted_intent = decode_payload(raw_input)
 
-    # 2. PLAN
-    plan = await generate_test_plan(formatted_intent)
+    prompt_override = CHAOS_SYSTEM_PROMPT if is_chaos else PLANNER_SYSTEM_PROMPT
+    plan = await generate_test_plan(formatted_intent, system_prompt_override=prompt_override)
 
     if not plan.steps:
         print("❌ No plan generated. Exiting.")
         return
 
+    plan.is_chaos_mode = is_chaos
     print(f"   📝 Generated {len(plan.steps)} steps.")
 
-    # 3. EXECUTE
     runner = AutomationRunner()
-    run_key = f"RUN-{run_saved_id if run_saved_id else 'AI'}-{asyncio.get_event_loop().time()}"
+    run_key = f"RUN-{'CHAOS' if is_chaos else 'SNIPER'}-{run_saved_id if run_saved_id else 'AI'}-{int(time.time())}"
 
-    await runner.execute_plan(plan, run_key)
-    print(f"✅ Run Complete: {run_key}")
+    try:
+        await runner.execute_plan(plan, run_key)
+        print(f"✅ Run Complete: {run_key}")
+    finally:
+        await runner.stop_browser()
 
-# --- MODE 2: SCOUT (New "Autonomous Crawler" Logic) ---
+# --- MODE 2: SCOUT (Autonomous Crawler) ---
 async def run_scout_mode(url: str, user: str = None, password: str = None):
     print(f"🕷️ Scout Mode Started on {url}")
     start_time = time.time()
-
-    # Prepare Credentials
     creds = {"username": user, "password": password} if user and password else None
 
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        # 1. ADVANCED LAUNCH: Bypasses basic "Automation" flags
         browser = await p.chromium.launch(
             headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars"
-            ]
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
         )
 
-        # 2. STEALTH CONTEXT: Masks User-Agent and Viewport
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={'width': 1920, 'height': 1080}
         )
 
         page = await context.new_page()
-
-        # 3. JS MASKING: Removes the 'webdriver' property from navigator
         await page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
 
-        # 4. INITIALIZE & RUN SCOUT
         scout = AutonomousCrawler(start_url=url, max_pages=15, credentials=creds)
         data = await scout.run(page)
 
-        # 5. GENERATE REPORT
         duration = time.time() - start_time
         report_file = generate_report(data, total_time_seconds=duration)
 
         await browser.close()
 
-    # 6. LOG TO HISTORY (DB)
     try:
         db_path = os.path.join("data", "db", "orchestrator.db")
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS crawl_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT,
-                report_path TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
         cursor.execute("INSERT INTO crawl_history (url, report_path) VALUES (?, ?)", (url, report_file))
         conn.commit()
         conn.close()
@@ -156,37 +129,72 @@ async def run_scout_mode(url: str, user: str = None, password: str = None):
 
     print(f"✅ Scout Mission Complete. Report: {report_file}")
 
+    try:
+        from ai.analyzer import RiskAnalyzer
+        analyzer = RiskAnalyzer()
+        heatmap = analyzer.generate_heatmap()
+
+        if heatmap:
+            top = heatmap[0]
+            if top['risk_score'] > 25:
+                print(f"⚠️  PREDICTIVE ALERT: Potential Fragility detected at {top['url']}")
+                print(f"   Risk Score: {top['risk_score']}% | Status: {top['status']}")
+    except Exception as e:
+        print(f"💡 Analyzer skipped: {e}")
+
+# --- MODE 3: REPLAY (Behavioral Log Replay) ---
+async def run_replay_mode(file_path: str):
+    """Ingests user session logs and triggers a targeted Sniper run."""
+    print(f"🔄 Replay Mode Started: {file_path}")
+
+    if not os.path.exists(file_path):
+        print(f"❌ Error: Session file {file_path} not found.")
+        return
+
+    with open(file_path, "r") as f:
+        urls = [line.strip() for line in f if line.strip()]
+
+    ingestor = BehavioralIngestor()
+    intent = ingestor.logs_to_intent(urls)
+
+    await run_sniper_mode(intent)
+
 # --- MAIN ENTRY POINT ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI QA Orchestrator")
 
-    # Arguments
     parser.add_argument("input", nargs="?", help="Base64 Payload OR Raw Intent OR URL")
-    parser.add_argument("--mode", choices=["sniper", "scout"], default="sniper", help="Operation Mode")
+    parser.add_argument("--mode", choices=["sniper", "scout", "replay"], default="sniper", help="Operation Mode")
     parser.add_argument("--run-saved", type=int, help="ID of saved test to run")
     parser.add_argument("--user", help="Username for Scout Login")
     parser.add_argument("--password", help="Password for Scout Login")
+    parser.add_argument("--chaos", action="store_true", help="Enable Chaos Monkey mode")
+    parser.add_argument("--file", help="Path to session file for replay mode")
 
     args = parser.parse_args()
 
-    # ROUTING LOGIC
     if args.mode == "scout":
         if not args.input:
-            print("❌ Error: Scout mode requires a URL as the input argument.")
+            print("❌ Error: Scout mode requires a URL.")
             sys.exit(1)
         asyncio.run(run_scout_mode(args.input, args.user, args.password))
 
+    elif args.mode == "replay":
+        target_file = args.file or args.input
+        if not target_file:
+            print("❌ Error: Replay mode requires a file path.")
+            sys.exit(1)
+        asyncio.run(run_replay_mode(target_file))
+
     elif args.run_saved:
-        # Legacy support for running saved tests
         saved_intent = get_saved_test_intent(args.run_saved)
         if saved_intent:
-            asyncio.run(run_sniper_mode(saved_intent, run_saved_id=args.run_saved))
+            asyncio.run(run_sniper_mode(saved_intent, run_saved_id=args.run_saved, is_chaos=args.chaos))
         else:
             print(f"❌ Saved Test ID {args.run_saved} not found.")
 
     else:
-        # Default to Sniper (UI Payload handling)
         if not args.input:
-             print("Usage: python main.py \"<intent_or_base64>\" OR python main.py <url> --mode scout")
+             print("Usage: python main.py \"<intent>\" [--chaos]")
              sys.exit(1)
-        asyncio.run(run_sniper_mode(args.input))
+        asyncio.run(run_sniper_mode(args.input, is_chaos=args.chaos))

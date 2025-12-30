@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -12,6 +12,8 @@ import {
   Database,
   Globe,
 } from 'lucide-react'
+import { getRiskHeatmap, RiskItem } from '@/app/actions'
+import RiskHeatmap from './RiskHeatmap'
 
 interface NavItemProps {
   href: string
@@ -24,6 +26,16 @@ interface NavItemProps {
 export default function Sidebar() {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [heatmapData, setHeatmapData] = useState<RiskItem[]>([])
+
+  // Fetch heatmap data on mount and whenever the path changes (as a proxy for new runs)
+  useEffect(() => {
+    async function loadHeatmap() {
+      const data = await getRiskHeatmap()
+      setHeatmapData(data)
+    }
+    loadHeatmap()
+  }, [pathname])
 
   const isActive = (path: string) => {
     return pathname === path
@@ -38,7 +50,6 @@ export default function Sidebar() {
         ${isCollapsed ? 'w-20' : 'w-64'}
       `}
     >
-      {/* Toggle Button (Floating on Border) */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="absolute -right-3 top-9 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition shadow-sm"
@@ -46,7 +57,6 @@ export default function Sidebar() {
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
 
-      {/* Brand Header */}
       <div
         className={`flex items-center gap-3 p-6 border-b border-slate-800/50 ${
           isCollapsed ? 'justify-center' : ''
@@ -66,8 +76,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Navigation Links */}
-      <nav className="flex-1 space-y-2 p-4">
+      <nav className="flex-1 space-y-2 p-4 overflow-y-auto custom-scrollbar">
         {!isCollapsed && (
           <div className="px-3 mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider animate-in fade-in">
             Main
@@ -77,7 +86,7 @@ export default function Sidebar() {
         <NavItem
           href="/"
           icon={<LayoutDashboard size={20} />}
-          label="Run History"
+          label="Sniper"
           active={isActive('/')}
           collapsed={isCollapsed}
         />
@@ -85,7 +94,7 @@ export default function Sidebar() {
         <NavItem
           href="/crawler"
           icon={<Globe size={20} />}
-          label="Crawl History"
+          label="Crawler"
           active={isActive('/crawler')}
           collapsed={isCollapsed}
         />
@@ -93,13 +102,19 @@ export default function Sidebar() {
         <NavItem
           href="/registry"
           icon={<Database size={20} />}
-          label="Saved Cases"
+          label="Registry"
           active={isActive('/registry')}
           collapsed={isCollapsed}
         />
+
+        {/* --- Phase 3: Predictive Intelligence Heatmap --- */}
+        {!isCollapsed && heatmapData.length > 0 && (
+          <div className="mt-8 px-2 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <RiskHeatmap data={heatmapData} />
+          </div>
+        )}
       </nav>
 
-      {/* Footer */}
       <div className="p-4 border-t border-slate-800/50">
         <div
           className={`flex items-center gap-3 rounded-lg px-3 py-2 text-slate-500 transition-colors hover:bg-slate-800/50 hover:text-slate-300 ${
@@ -107,14 +122,13 @@ export default function Sidebar() {
           }`}
         >
           <Settings size={20} />
-          {!isCollapsed && <span className="text-xs font-mono">v1.1.0 Stable</span>}
+          {!isCollapsed && <span className="text-xs font-mono">v1.2.0 AI-Intelligent</span>}
         </div>
       </div>
     </aside>
   )
 }
 
-// Helper Component for Cleaner JSX
 function NavItem({ href, icon, label, active, collapsed }: NavItemProps) {
   return (
     <Link

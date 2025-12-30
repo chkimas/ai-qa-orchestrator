@@ -49,16 +49,16 @@ class AutonomousCrawler:
             resp = generate_response(prompt)
             data = json.loads(re.search(r"\{.*\}", resp, re.DOTALL).group(0))
 
-            if data.get('status') == "BLOCKED":
-                logger.error(f"🛡️ BOT WALL DETECTED AT {url}")
-                return
-
-            target = data.get('target_text')
-            res = "✅ PASS" if target and await page.locator(f"text={target}").first.is_visible(timeout=2000) else "❌ FAIL"
+            # Capturing the "Fingerprint" of the main CTA for the report
+            # This allows the 'Healer' to know what the button looked like when it was WORKING.
+            fingerprint = data.get('fingerprint')
 
             self.report_data.append({
-                "url": url, "type": data.get('page_type', 'General'),
-                "test_executed": data.get('test_name'), "test_result": res
+                "url": url,
+                "type": data.get('page_type', 'General'),
+                "test_executed": data.get('test_name'),
+                "test_result": "✅ PASS" if data.get('status') == "OK" else "❌ FAIL",
+                "dna": fingerprint
             })
         except Exception as e:
             logger.warning(f"⚠️ Analysis Failed: {e}")

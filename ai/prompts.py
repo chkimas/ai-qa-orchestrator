@@ -77,7 +77,7 @@ If clean page → [{"step_id":1,"role":"crawler","action":"navigate","value":"ne
 """
 
 CRAWLER_ANALYSIS_PROMPT = """
-You are a QA Page Classifier. Analyze page content and generate ONE critical test assertion.
+You are a QA Page Classifier. Analyze page content and generate ONE critical test + element fingerprint.
 
 INPUT:
 - URL: Current page
@@ -93,23 +93,60 @@ RULES:
    - BLOCKED if contains: "Cloudflare", "hCaptcha", "robot", "Access Denied"
    - OK if app content visible (products, prices, menus)
 
-3. **ASSERTION GENERATION**:
-   - ONE verify_text assertion for page purpose
-   - Use exact visible text (no guessing)
+3. **CRITICAL ASSERTION**:
+   - ONE verify_text for page purpose
    - selector ALWAYS: "body"
+   - Use exact visible text
 
-4. **OUTPUT FORMAT**:
-   - JSON ONLY, no explanations:
-   {
-     "page_type": "login",
-     "status": "OK",
-     "test_name": "Verify login form visible",
-     "target_text": "Welcome back",
-     "assertion": {"action": "verify_text", "selector": "body", "value": "Welcome back"}
-   }
+4. **INTERACTIVE FINGERPRINT** (OK pages only):
+   - Most important clickable/input element
+   - Format: {"tag": "button", "text": "Login", "selector": "text=Login", "priority": "login"}
+
+5. **OUTPUT FORMAT** (JSON ONLY):
+{
+  "page_type": "login",
+  "status": "OK",
+  "test_name": "Verify login form",
+  "target_text": "Welcome back",
+  "assertion": {"action": "verify_text", "selector": "body", "value": "Welcome back"},
+  "fingerprint": {"tag": "button", "text": "Login", "selector": "text=Login", "priority": "login"}
+}
 
 EXAMPLES:
-Blocked: {"page_type":"blocked","status":"BLOCKED","test_name":"Cloudflare detected","target_text":"","assertion":null}
-Clean: {"page_type":"dashboard","status":"OK","test_name":"Verify user dashboard","target_text":"Dashboard","assertion":{"action":"verify_text","selector":"body","value":"Dashboard"}}
+Blocked: {{"page_type":"blocked","status":"BLOCKED","test_name":"Bot challenge","target_text":"","assertion":null,"fingerprint":null}}
+Clean: {{"page_type":"login","status":"OK","test_name":"Verify login","target_text":"Sign in","assertion":{{"action":"verify_text","selector":"body","value":"Sign in"}},"fingerprint":{{"tag":"input","text":"","selector":"[placeholder='Email']","priority":"login"}}}}
+"""
+
+
+CHAOS_SYSTEM_PROMPT = """
+You are a QA Chaos Monkey. Generate destructive test plan targeting edge cases + failure modes.
+
+CONTEXT: Same as PLANNER (URL, Role, Data)
+
+RULES:
+1. **START** with navigate (CONTEXT['URL'])
+2. **ACTIONS**: navigate, click, input, wait, verify_text ONLY
+3. **CHAOS STRATEGIES**:
+   - MASSIVE: 5000+ chars in inputs
+   - INJECTION: `<script>`, `'; DROP TABLE --`, 😈🚀💥
+   - RAPID: Click same element 5x rapidly
+   - NEGATIVE: Empty required fields, invalid dates/emails
+   - BOUNDARY: Max/min values, special chars
+
+4. **VERIFY FAILURES**:
+   - selector: "body", value: expected error messages
+   - Confirm app handles breakage gracefully
+
+5. **OUTPUT**: Identical JSON schema as PLANNER:
+[{"step_id":1,"role":"customer","action":"navigate","value":"{{URL_FROM_CONTEXT}}"}]
+
+EXAMPLE CHAOS:
+[
+  {"step_id":1,"role":"customer","action":"navigate","value":"{{URL_FROM_CONTEXT}}"},
+  {"step_id":2,"role":"customer","action":"input","selector":"[placeholder*='email']","value":"' OR 1=1 --"},
+  {"step_id":3,"role":"customer","action":"input","selector":"[placeholder*='password']","value":"😈🚀💥A".repeat(1000)},
+  {"step_id":4,"role":"customer","action":"click","selector":"text=Submit","note":"rapid_click_x5"},
+  {"step_id":5,"role":"customer","action":"verify_text","selector":"body","value":"Invalid input"}
+]
 """
 
