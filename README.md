@@ -75,7 +75,7 @@ An autonomous, full-stack QA platform that leverages **Generative AI** to map, t
 
 ---
 
-## 🛡️ Portfolio Highlights (For Interviewers)
+## 🛡️ Project Highlights
 
 - **Unicode Stream Pipe:** Resolved Windows-to-Node pipe encoding crashes by enforcing `PYTHONIOENCODING='utf-8'` and wrapping `sys.stdout` in an `io.TextIOWrapper`.
 - **The SSOT Pattern:** Optimized token usage and maintainability by unifying all AI logic into a **Single Source of Truth** (`ai/prompts.py`).
