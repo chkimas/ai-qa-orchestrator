@@ -1,6 +1,14 @@
+# Use the official Python bookworm image
 FROM python:3.11-bookworm
 
-# Install system dependencies for Playwright
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=7860 \
+    HOME=/home/user \
+    PATH="/home/user/.local/bin:$PATH"
+
+# Install system dependencies for Playwright & Gunicorn
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -19,18 +27,26 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Create a non-root user (Mandatory for Hugging Face)
+RUN useradd -m -u 1000 user
+USER user
+WORKDIR $HOME/app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+COPY --chown=user requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Install Chromium and its OS-level dependencies
+# Install Playwright Chromium
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-COPY . .
+# Copy application code
+COPY --chown=user . .
 
-ENV PORT=7860
+# Expose HF default port
 EXPOSE 7860
 
-CMD ["python", "worker_api.py"]
+# Start with Gunicorn for "Never Sleeping" reliability
+# -w 2: Two workers (Good for 2vCPU / 16GB RAM spaces)
+# --timeout 300: Allow 5 mins for long Scout missions
+CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "worker_api:app", "--bind", "0.0.0.0:7860", "--timeout", "300"]

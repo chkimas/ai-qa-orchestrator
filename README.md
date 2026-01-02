@@ -1,111 +1,86 @@
-# 🛡️ AI-QA Orchestrator (Titan V1.2.0)
+# 👁️ ARGUS: The Intelligence That Never Sleeps
 
-An autonomous, full-stack QA "Control Plane" that leverages **Generative AI** to map, test, and audit web applications. Unlike traditional tools, this platform functions as a **Reasoning Agent** capable of self-healing, chaos engineering, and predictive risk analysis.
+![Status: Production-Grade](https://img.shields.io/badge/Status-Production--Grade-blue?style=for-the-badge)
+![Security: AES-256-CBC](https://img.shields.io/badge/Security-AES--256--CBC-green?style=for-the-badge)
+![Intelligence: Multi--Model](https://img.shields.io/badge/Intelligence-Multi--Model-blueviolet?style=for-the-badge)
 
----
-
-## 🚀 Advanced Operational Modes
-
-### 1. 🎯 Sniper Mode (Intent-to-Code)
-
-Translate human business intent into deterministic execution plans.
-
-- **Self-Healing Fingerprints:** Uses "Element DNA" (Tag + Attributes + Visual Coordinates) to maintain 92% uptime even when IDs/Classes change.
-- **Heuristic Repair:** Automatically triggers LLM-reasoning to re-map selectors during runtime failures.
-
-### 2. 🕷️ Scout Mode (Autonomous Recon)
-
-Autonomous "Spider" that maps application routes and captures UI state.
-
-- **Stealth Stack:** Bypasses WAF/Bot-detection (Cloudflare/hCaptcha) using JS-masking and fingerprint randomization.
-- **DNA Capture:** Automatically snapshots the "Visual DNA" of critical elements for future healing.
-
-### 3. 🔥 Chaos Monkey (Adversarial Testing)
-
-Intentionally attempts to break the application to find edge cases.
-
-- **Destructive Payloads:** Automatically generates SQL injection, XSS, and massive character overflows.
-- **Stress Testing:** Executes rapid-fire interactions and boundary-logic attacks to verify system resilience.
-
-### 4. 🔄 Behavioral Replay (Shift-Right)
-
-Ingests real-world user session logs to prioritize regression testing.
-
-- **Log Ingestion:** Converts URL paths from production logs into high-priority automated "Sniper" runs.
+**ARGUS** is an autonomous, full-stack **Neural Watchman** designed for the modern web ecosystem. Moving beyond brittle, selector-based scripts, ARGUS utilizes a **Multi-Model Neural Core** to perceive, reason, and heal web automation in real-time.
 
 ---
 
-## 🧠 Predictive Intelligence (Phase 3)
+## 🖼️ System Interface
 
-The platform includes a **Predictive Risk Heatmap** that analyzes historical execution data to identify "Brittle Zones."
+### 🌌 The Watchman Landing
 
-- **Risk Weighting:** Calculates fragility based on a weighted average of `FAILURES` vs. `HEALING` events.
-- **Complexity Mapping:** Weighs risk against DOM complexity (interactive element density).
-- **Stability Forecasting:** Provides executive-level insight into whether a build is "Stable," "Brittle," or "Critical."
+![Landing Page](https://raw.githubusercontent.com/your-username/argus-neural-watchman/main/public/screenshots/landing.png)
+_High-impact hero section featuring the "Intelligence That Never Sleeps" typography and the Eye of Argus mythic background._
 
----
+### 📊 Tactical Command (Dashboard)
 
-## 🛠️ Technical Stack
+![Dashboard](https://raw.githubusercontent.com/your-username/argus-neural-watchman/main/public/screenshots/dashboard.png)
+_Real-time mission monitoring with live telemetry streams and the Predictive Risk Heatmap._
 
-- **Engine:** Python 3.11+, Playwright (Chromium)
-- **Brain:** Google Gemini 2.0 Flash / Groq (Llama-3.3-70B)
-- **Frontend:** Next.js 16+, Tailwind CSS, Lucide Icons, TypeScript
-- **Infrastructure:** Node.js Server Actions (Child Process Orchestration)
-- **Persistence:** SQLite with Write-Ahead Logging (WAL) for concurrent AI/Web access.
+### 🕷️ Autonomous Recon (Scout)
 
----
+![Scout Recon](https://raw.githubusercontent.com/your-username/argus-neural-watchman/main/public/screenshots/recon.png)
+_Visualization of the autonomous spider mapping application routes and capturing UI state._
 
-## 📦 Installation & Setup
+### 🔒 Mission Vault (Settings)
 
-1. **Clone & Setup:**
-
-   ```bash
-   git clone [https://github.com/your-username/ai-qa-orchestrator.git](https://github.com/your-username/ai-qa-orchestrator.git)
-   cd ai-qa-orchestrator
-   ```
-
-2. **Backend (Python):**
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate # Windows: .\venv\Scripts\activate
-   pip install -r requirements.txt
-   playwright install chromium
-   ```
-
-3. **Frontend (Next.js):**
-
-   ```bash
-   cd dashboard
-   npm install
-   npm run dev
-   ```
-
-4. **Configure Environment:**
-   Create a `.env` file in the root:
-   ```env
-   GEMINI_API_KEY=your_key_here
-   AI_PROVIDER=gemini # or groq
-   ```
+![Settings Vault](https://raw.githubusercontent.com/your-username/argus-neural-watchman/main/public/screenshots/settings.png)
+_AES-256-CBC encrypted key management and neural provider configuration._
 
 ---
 
-## 📈 Performance Metrics
+## 🛡️ Tactical Mission Modules
 
-| Metric                | Capability                                  |
-| :-------------------- | :------------------------------------------ |
-| **Discovery Depth**   | Up to 20 internal pages/states              |
-| **Auto-Healing Rate** | ~92% recovery on UI shifts                  |
-| **Bypass Success**    | Handles standard WAF challenges & SPAs      |
-| **Risk Scoring**      | Predictive mapping based on Heal/Fail ratio |
+- **🎯 Sniper Mode:** Natural language intent to deterministic execution. Features **Neural Healing** to re-map broken selectors autonomously.
+- **👁️ Scout Mode:** Autonomous "Spider" that maps routes, captures UI state, and identifies "Brittle Zones" without human intervention.
+- **🔥 Chaos Monkey:** Adversarial testing via AI-generated destructive payloads (XSS, SQLi, overflows) to find system breaking points.
+- **🔄 Behavioral Replay:** Promote successful "Scout" missions to the **Golden Path Registry** for continuous regression monitoring.
 
 ---
 
-## 🛡️ Engineering Highlights
+## 🧠 The Watchman Stack
 
-- **Fault-Tolerant JSON Parsing:** Implemented a non-greedy regex "Heuristic Repair" parser in `planner.py` to handle messy AI-generated Chaos payloads.
-- **Shift-Right Integration:** Integrated a `BehavioralIngestor` to close the loop between user behavior and automated audits.
-- **The SSOT Pattern:** Optimized token usage and maintainability by unifying all AI logic into a **Single Source of Truth** (`ai/prompts.py`).
-- **Unicode Stream Pipe:** Resolved Windows-to-Node pipe encoding crashes by enforcing `PYTHONIOENCODING='utf-8'` and wrapping `sys.stdout` in an `io.TextIOWrapper`.
+| Layer                | Technology              | Provider (Free Tier) |
+| :------------------- | :---------------------- | :------------------- |
+| **Neural Core**      | Gemini, Groq, Llama 3.3 | Google / Groq Cloud  |
+| **Orchestration**    | Python 3.11, FastAPI    | Hugging Face Spaces  |
+| **Automation**       | Playwright (Chromium)   | Hugging Face Spaces  |
+| **Intelligence Hub** | Next.js 15, TypeScript  | Vercel               |
+| **Persistence**      | PostgreSQL, Realtime    | Supabase             |
+| **Authentication**   | Middleware Security     | Clerk                |
 
 ---
+
+## 🔒 Security: The Vault Pattern
+
+ARGUS implements a strict **Zero-Knowledge Vault Handshake**. Your AI provider keys are encrypted at the browser level using **AES-256-CBC** before being dispatched to the worker. Only the worker, armed with your unique `VAULT_MASTER_KEY` during runtime, can unlock the "Intelligence" for the duration of the mission.
+
+---
+
+## ⚠️ Known Limitations & Third-Party Services
+
+This project is built using the **Free Tier** offerings of our ecosystem partners. Consequently, the following constraints apply:
+
+- **Hugging Face:** Worker nodes may enter "Sleep Mode" during inactivity. The first mission request may trigger a "Wake-Up" delay.
+- **Supabase:** Real-time log streaming is subject to free-tier connection concurrency limits.
+- **Vercel / Clerk:** Server Action timeouts and authentication session limits are governed by standard free-tier policies.
+- **API Quotas:** Mission frequency is limited by the rate-limits of your configured providers (Gemini/Groq).
+
+---
+
+## 📜 License & Copyright
+
+**Copyright © 2026 ARGUS NEURAL SYSTEMS.** All rights reserved.
+
+This repository and its contents are **Proprietary Software**.
+
+1.  **Public Visibility:** You are permitted to view the source code and fork this repository for personal study on the GitHub platform.
+2.  **Usage Restrictions:** Unauthorized copying, modification, distribution, or commercial use of this software is strictly prohibited.
+3.  **No Warranty:** This software is provided "as-is" without any warranties of any kind.
+
+---
+
+_Designed for the Intelligence that Never Sleeps._

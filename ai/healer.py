@@ -1,54 +1,45 @@
 import logging
-from ai.provider import generate_response  # Ensure this imports your main LLM function
+from ai.provider import generate_response
 
 logger = logging.getLogger("orchestrator.healer")
 
-async def heal_selector(page, failed_selector: str, original_intent: str) -> str:
-    """
-    Scrapes the DOM to find a better selector when the original fails.
-    """
+async def heal_selector(page, failed_selector: str, original_intent: str, provider=None, encrypted_key=None):
     logger.warning(f"🩹 Healing triggered for: {failed_selector}")
 
     try:
-        # 1. SNAPSHOT THE DOM 📸
-        # We strip scripts/styles/svgs to keep the token count low and focus on structure
         dom_snapshot = await page.evaluate("""() => {
             const clean = document.body.cloneNode(true);
             const rubbish = clean.querySelectorAll('script, style, svg, path, noscript');
             rubbish.forEach(el => el.remove());
-            // Return first 15k chars to avoid token limits
             return clean.innerHTML.slice(0, 15000);
         }""")
 
-        # 2. ASK THE AI 🧠
         prompt = f"""
         I am an automated tester. I failed to find an element.
-
         FAILED SELECTOR: "{failed_selector}"
         USER INTENT: "{original_intent}"
-
-        Here is the CLEANED HTML of the current page:
-        ```html
-        {dom_snapshot}
-        ```
+        HTML Snapshot: {dom_snapshot}
 
         TASK:
-        Analyze the HTML. Find the one true robust selector (ID, data-test, name, or placeholder) that matches the User Intent.
+        1. Find a robust selector for the intent.
+        2. Briefly explain why the original failed (e.g., 'ID changed' or 'Dynamic class').
 
-        RULES:
-        1. Return ONLY the selector string.
-        2. No markdown, no json, no explanations.
-        3. If multiple exist, prioritize: `[placeholder]`, then `[data-test]`, then `[id]`.
+        OUTPUT FORMAT: SELECTOR | REASONING
+        Example: [data-test='login'] | Original placeholder 'User' changed to 'Email/User'
         """
 
-        # Call your LLM
-        new_selector = generate_response(prompt).strip()
+        raw_response = await generate_response(prompt, provider=provider, encrypted_key=encrypted_key)
 
-        # Cleanup response just in case
-        new_selector = new_selector.replace("`", "").replace('"', '').replace("'", "")
+        if "|" in str(raw_response):
+            parts = str(raw_response).split("|")
+            new_selector = parts[0].strip().replace("`", "").replace('"', '').replace("'", "")
+            reasoning = parts[1].strip()
+        else:
+            new_selector = str(raw_response).strip().replace("`", "").replace('"', '').replace("'", "")
+            reasoning = "Selector optimized for visual/semantic match."
 
-        logger.info(f"✅ Healed Selector: {new_selector}")
-        return new_selector
+        logger.info(f"✅ Healed Selector: {new_selector} ({reasoning})")
+        return {"selector": new_selector, "reasoning": reasoning}
 
     except Exception as e:
         logger.error(f"❌ Healing failed: {e}")

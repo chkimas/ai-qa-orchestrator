@@ -1,54 +1,34 @@
-import os
 import logging
-from cryptography.fernet import Fernet
-from dotenv import load_dotenv
+import hashlib
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
+from configs.settings import settings
 
-load_dotenv()
 logger = logging.getLogger("orchestrator.vault")
 
 class Vault:
-    """
-    Enterprise-Grade Encryption Vault for API Key Management.
-    Uses AES-128/HMAC (Fernet) for authenticated encryption.
-    """
-
-    # In production, this should be a 32-byte base64 encoded string
-    # Generated via: Fernet.generate_key()
-    _MASTER_KEY = os.getenv("VAULT_MASTER_KEY")
-
-    @classmethod
-    def _get_cipher(cls):
-        if not cls._MASTER_KEY:
-            logger.error("❌ VAULT_MASTER_KEY not found in environment variables.")
-            raise EnvironmentError("Security critical: MASTER_KEY missing.")
-        return Fernet(cls._MASTER_KEY.encode())
-
-    @classmethod
-    def encrypt_key(cls, raw_key: str) -> str:
-        """Encrypts a raw API key for database storage."""
-        if not raw_key:
+    @staticmethod
+    def decrypt_key(encrypted_text: str) -> str:
+        if not encrypted_text or ":" not in encrypted_text:
             return ""
         try:
-            cipher = cls._get_cipher()
-            encrypted_data = cipher.encrypt(raw_key.encode())
-            return encrypted_data.decode()
-        except Exception as e:
-            logger.error(f"❌ Encryption failed: {e}")
-            return ""
+            raw_key = settings.VAULT_MASTER_KEY.strip().replace('"', '').replace("'", "")
+            master_key = hashlib.sha256(raw_key.encode('utf-8')).digest()
 
-    @classmethod
-    def decrypt_key(cls, encrypted_key: str) -> str:
-        """Decrypts a stored key for runtime AI usage."""
-        if not encrypted_key:
-            return ""
-        try:
-            cipher = cls._get_cipher()
-            decrypted_data = cipher.decrypt(encrypted_key.encode())
-            return decrypted_data.decode()
-        except Exception as e:
-            logger.error(f"❌ Decryption failed: {e}")
-            return ""
+            iv_hex, encrypted_hex = encrypted_text.split(":")
+            iv = bytes.fromhex(iv_hex)
+            encrypted_data = bytes.fromhex(encrypted_hex)
 
-# Implementation Example for Server Logic:
-# encrypted = Vault.encrypt_key("sk-ant-api03...")
-# decrypted = Vault.decrypt_key(encrypted)
+            cipher = Cipher(algorithms.AES(master_key), modes.CBC(iv), backend=default_backend())
+            decryptor = cipher.decryptor()
+
+            padded_data = decryptor.update(encrypted_data) + decryptor.finalize()
+
+            unpadder = padding.PKCS7(128).unpadder()
+            data = unpadder.update(padded_data) + unpadder.finalize()
+
+            return data.decode('utf-8')
+        except Exception as e:
+            print(f"❌ Vault Error: {str(e)}")
+            return ""

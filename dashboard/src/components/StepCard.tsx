@@ -1,190 +1,110 @@
 'use client'
 
-import React, { useState } from 'react'
-import Image from 'next/image'
-import { CheckCircle, XCircle, Bandage, MousePointer, Type, ImageIcon, Play } from 'lucide-react'
+import Image from 'next/image' // Added for optimization
+import {
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  Code,
+  MousePointer2,
+  Type,
+  Search,
+  Shield,
+} from 'lucide-react'
 
 interface StepProps {
   step: {
-    id: number
     step_id: number
-    role: string
     action: string
     status: string
-    description: string
+    message: string
+    role: string // Added role to interface
     selector?: string
     value?: string
-    timestamp: string
+    screenshot_url?: string
+    created_at: string
   }
 }
 
 export default function StepCard({ step }: StepProps) {
-  const [isImageOpen, setIsImageOpen] = useState(false)
+  const isError = step.status === 'FAILED' || step.status === 'ERROR'
+  const isComplete = step.status === 'COMPLETED' || step.status === 'SUCCESS'
+  const isSystem = step.role === 'system'
 
-  const isHealEvent = step.action === 'heal' || step.status === 'HEALED'
-  const isScreenshot = step.description?.startsWith('IMG:')
-  const screenshotFilename = isScreenshot ? step.description.replace('IMG:', '').trim() : null
-
-  let oldSelector = ''
-  let newSelector = ''
-  if (isHealEvent && step.description && step.description.includes('->')) {
-    const parts = step.description.replace('Healed: ', '').split('->')
-    oldSelector = parts[0]?.trim().replace(/'/g, '')
-    newSelector = parts[1]?.trim().replace(/'/g, '')
-  }
-
-  const getStatusIcon = () => {
-    if (step.status === 'FAILED' || step.status === 'ERROR')
-      return <XCircle className="w-4 h-4 text-red-400" />
-    if (step.status === 'PASSED') return <CheckCircle className="w-4 h-4 text-green-400" />
-    if (isHealEvent) return <Bandage className="w-4 h-4 text-orange-400" />
-    if (isScreenshot) return <ImageIcon className="w-4 h-4 text-pink-400" />
-    return <Play className="w-4 h-4 text-slate-400" />
-  }
-
-  const getBgColor = () => {
-    if (step.status === 'FAILED') return 'bg-red-500/5 border-red-500/20'
-    if (step.status === 'PASSED') return 'bg-green-500/5 border-green-500/20'
-    if (isHealEvent) return 'bg-orange-500/10 border-orange-500/30'
-    if (isScreenshot) return 'bg-pink-500/5 border-pink-500/20'
-    return 'bg-slate-900/50 border-slate-800/50'
+  const getIcon = () => {
+    if (isSystem) return <Shield size={14} className="text-blue-400" />
+    if (step.action.toLowerCase().includes('click')) return <MousePointer2 size={14} />
+    if (step.action.toLowerCase().includes('input')) return <Type size={14} />
+    if (step.action.toLowerCase().includes('verify')) return <CheckCircle2 size={14} />
+    return <Activity size={14} />
   }
 
   return (
-    <>
+    <div className={`relative flex gap-6 group`}>
+      {/* Step Indicator */}
       <div
-        className={`group relative rounded-xl border border-slate-800/60 bg-slate-950/60 p-4 transition-all duration-200 hover:border-slate-700 hover:bg-slate-950 hover:shadow-lg hover:shadow-black/40 ${getBgColor()}`}
+        className={`z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-all ${
+          isError
+            ? 'bg-red-500/10 border-red-500/40 text-red-500'
+            : isComplete
+            ? 'bg-green-500/10 border-green-500/40 text-green-500'
+            : isSystem
+            ? 'bg-blue-500/10 border-blue-500/40 text-blue-400'
+            : 'bg-slate-900 border-slate-700 text-slate-400'
+        }`}
       >
-        {/* Header + Timestamp */}
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Status Icon */}
-            <div className="mt-0.5 shrink-0 rounded-lg border border-slate-700/60 bg-slate-900/60 p-1.5 backdrop-blur-sm">
-              {getStatusIcon()}
-            </div>
+        {isError ? <AlertCircle size={18} /> : isComplete ? <CheckCircle2 size={18} /> : getIcon()}
+      </div>
 
-            {/* Header Text */}
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="rounded-full border border-slate-700/40 bg-slate-900/40 px-2 py-0.5 text-[11px] font-semibold text-slate-400">
-                {step.role.toUpperCase()}
-              </span>
-              <span className="rounded-md bg-black/40 px-2 py-0.5 font-mono text-[11px] text-slate-500">
-                {step.step_id}
-              </span>
-              <span className="text-[11px] font-semibold text-slate-500 tracking-wide">
-                {step.action.toUpperCase()}
-              </span>
-            </div>
+      <div className="flex-1 bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 hover:border-slate-700 transition-colors">
+        <header className="flex justify-between items-start mb-3">
+          <div>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+              Step_{step.step_id.toString().padStart(2, '0')} {'//'} {step.action}
+            </span>
+            <p className="text-sm text-slate-200 font-medium leading-relaxed">{step.message}</p>
           </div>
+          <span className="text-[9px] font-mono text-slate-600 uppercase">
+            {step.role} {'//'}{' '}
+            {new Date(step.created_at).toLocaleTimeString([], {
+              hour12: false,
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+          </span>
+        </header>
 
-          {/* Timestamp */}
-          <div className="ml-3 text-right font-mono text-[11px] text-slate-500">
-            <div>
-              {new Date(step.timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </div>
-            <div className="text-[10px] text-slate-700">
-              {new Date(step.timestamp).toLocaleDateString()}
-            </div>
-          </div>
-        </div>
-
-        {/* Description */}
-        {!isHealEvent && !isScreenshot && (
-          <p className="mt-2 text-sm font-medium leading-relaxed text-slate-200">
-            {step.description}
-          </p>
-        )}
-
-        {/* Selector / Value Chips */}
-        {(step.selector || step.value) && !isHealEvent && !isScreenshot && (
-          <div className="mt-2 flex flex-wrap gap-2">
+        {(step.selector || step.value) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
             {step.selector && (
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/5 px-2 py-1 font-mono text-[11px] text-blue-300">
-                <MousePointer className="h-3 w-3" />
-                {step.selector}
-              </span>
+              <div className="bg-black/40 rounded-lg p-2 border border-slate-800/50 flex items-center gap-2">
+                <Search size={12} className="text-blue-500" />
+                <code className="text-[10px] text-blue-400 truncate font-mono">
+                  {step.selector}
+                </code>
+              </div>
             )}
             {step.value && (
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/5 px-2 py-1 font-mono text-[11px] text-indigo-300">
-                <Type className="h-3 w-3" />
-                {step.value.length > 28 ? `${step.value.slice(0, 28)}…` : step.value}
-              </span>
+              <div className="bg-black/40 rounded-lg p-2 border border-slate-800/50 flex items-center gap-2">
+                <Code size={12} className="text-yellow-500" />
+                <code className="text-[10px] text-yellow-500 truncate font-mono">{step.value}</code>
+              </div>
             )}
           </div>
         )}
 
-        {/* Healing Diff */}
-        {isHealEvent && (
-          <div className="mt-3 rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
-            <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-orange-300">
-              <Bandage className="h-4 w-4" />
-              Self-Healing Applied
-            </p>
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <div className="flex-1 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-red-400 line-through">
-                {oldSelector || 'Failed selector'}
-              </div>
-              <span className="text-slate-500">→</span>
-              <div className="flex-1 rounded-md border border-green-500/30 bg-green-500/10 p-2 font-semibold text-green-400">
-                {newSelector || 'Auto-fixed'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Screenshot */}
-        {isScreenshot && screenshotFilename && (
-          <div className="mt-3">
-            <button
-              onClick={() => setIsImageOpen(true)}
-              className="group relative w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40 aspect-video transition hover:border-pink-500/40"
-            >
-              <Image
-                src={`/screenshots/${screenshotFilename}`}
-                alt="Screenshot"
-                fill
-                className="object-cover opacity-70 transition group-hover:opacity-100"
-                unoptimized
-              />
-              <div className="absolute inset-0 flex items-end bg-linear-to-t from-black/70 via-transparent to-transparent opacity-0 transition group-hover:opacity-100">
-                <span className="m-3 inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/20 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                  <ImageIcon className="h-3 w-3" />
-                  Expand
-                </span>
-              </div>
-            </button>
-            <p className="mt-1 truncate font-mono text-[11px] text-slate-500">
-              {screenshotFilename}
-            </p>
+        {step.screenshot_url && (
+          <div className="mt-4 rounded-xl overflow-hidden border border-slate-800 relative aspect-video">
+            <Image
+              src={step.screenshot_url}
+              alt="Argus Intelligence Capture"
+              fill
+              unoptimized // dynamic screenshots from workers are usually better served unoptimized
+              className="object-cover opacity-80 hover:opacity-100 transition-opacity"
+            />
           </div>
         )}
       </div>
-
-      {/* Fullscreen Modal */}
-      {isImageOpen && screenshotFilename && (
-        <div
-          className="fixed inset-0 z-100 flex items-center justify-center bg-black/95 backdrop-blur-md p-4"
-          onClick={() => setIsImageOpen(false)}
-        >
-          <div className="relative h-full w-full max-w-6xl">
-            <Image
-              src={`/screenshots/${screenshotFilename}`}
-              alt="Full Screenshot"
-              fill
-              className="object-contain rounded-xl border border-slate-800 shadow-2xl"
-              unoptimized
-            />
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-xl border border-white/20 bg-black/70 px-5 py-2 text-xs font-mono text-white backdrop-blur-md">
-              <ImageIcon className="mr-2 inline h-3 w-3" />
-              {screenshotFilename}
-              <span className="ml-3 text-slate-400">(click to close)</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   )
 }

@@ -1,33 +1,19 @@
-export type RunStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'HEALED'
+import { Database } from './supabase'
+
+// Extract raw Table types from the generated Schema
+type PublicTable = Database['public']['Tables']
+
+// Export Domain Models (Aliases to the Generated Source of Truth)
+export type TestRun = PublicTable['test_runs']['Row']
+export type UserSettings = PublicTable['user_settings']['Row']
+export type ExecutionLog = PublicTable['execution_logs']['Row']
+export type SavedTest = PublicTable['saved_tests']['Row']
+
+// Export Helper types for Insert/Update operations
+export type TestRunInsert = PublicTable['test_runs']['Insert']
+export type TestRunUpdate = PublicTable['test_runs']['Update']
+
+// Application Logic Enums (Keep these for UI and Type-safety in code)
+export type RunStatus = 'QUEUED' | 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'HEALED'
 export type RunMode = 'sniper' | 'scout' | 'chaos' | 'replay'
-
-export interface TestRun {
-  id: string
-  user_id: string
-  url: string
-  intent: string
-  status: RunStatus
-  mode: RunMode
-  created_at: string
-}
-
-export interface ExecutionLog {
-  id: number
-  run_id: string
-  step_id: number
-  role: string
-  action: string
-  status: string
-  description: string
-  details?: string
-  selector?: string
-  value?: string
-  timestamp: string
-}
-
-export interface SavedTest {
-  id: number
-  name: string
-  steps_json: string
-  created_at: string
-}
+export type AIProvider = 'groq' | 'gemini' | 'openai' | 'anthropic' | 'sonar'

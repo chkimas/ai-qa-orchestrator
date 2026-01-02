@@ -3,65 +3,118 @@
 import { auth } from '@clerk/nextjs/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
+import { AIProvider, UserSettings } from '@/types/database'
 
-export async function launchMission(formData: FormData) {
+const LaunchSchema = z.object({
+  url: z.string().url('Invalid target URL'),
+  intent: z.string().min(5, 'Intent too short'),
+  provider: z.enum(['groq', 'gemini', 'openai', 'anthropic', 'sonar']) as z.ZodType<AIProvider>,
+  testData: z
+    .string()
+    .optional()
+    .transform(val => {
+      try {
+        return val ? JSON.parse(val) : {}
+      } catch {
+        return {}
+      }
+    }),
+})
+
+type MissionResult = { success: true; runId: string } | { success: false; error: string }
+
+export async function launchMission(formData: FormData): Promise<MissionResult> {
   const { userId } = await auth()
-  if (!userId) throw new Error('Authentication required to launch mission.')
+  if (!userId) return { success: false, error: 'Unauthorized: No active session.' }
 
-  const url = formData.get('url') as string
-  const intent = formData.get('intent') as string
-  const provider = (formData.get('provider') as string) || 'groq'
+  const validated = LaunchSchema.safeParse({
+    url: formData.get('url'),
+    intent: formData.get('intent'),
+    provider: formData.get('provider'),
+    testData: formData.get('test_data'),
+  })
 
+  if (!validated.success) {
+    return { success: false, error: validated.error.issues[0].message }
+  }
+
+  const { url, intent, provider, testData } = validated.data
   const supabase = getSupabaseAdmin()
+  let createdRunId: string | null = null
 
-  // 1. Pre-register the run so the UI can navigate immediately
-  const { data: run, error } = await supabase
-    .from('test_runs')
-    .insert({
-      user_id: userId,
-      url: url,
-      intent: intent,
-      status: 'QUEUED',
-      mode: 'sniper',
-    })
-    .select()
-    .single()
-
-  if (error || !run) {
-    console.error('Supabase pre-registration failed:', error)
-    return { success: false, error: 'Database rejected mission launch.' }
-  }
-
-  // 2. Prepare the encrypted/Base64 payload for the Python worker
-  // We mirror the format expected by worker_api.py
-  const payload = {
-    user_id: userId,
-    run_id: run.id, // Pass the UUID we just created
-    context: { baseUrl: url },
-    instructions: intent,
-    provider: provider,
-  }
-
-  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64')
-
-  // 3. Fire-and-forget ping to the Hugging Face Worker
   try {
-    const workerResponse = await fetch(process.env.AI_WORKER_URL!, {
+    // 1. Fetch encrypted keys and preferred settings
+    const { data: settings, error: sError } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (sError || !settings) {
+      return { success: false, error: 'System Config missing. Please visit Settings.' }
+    }
+
+    // 2. Map provider to specific encrypted key column
+    const keyMap: Record<AIProvider, keyof UserSettings> = {
+      openai: 'encrypted_openai_key',
+      gemini: 'encrypted_gemini_key',
+      groq: 'encrypted_groq_key',
+      anthropic: 'encrypted_anthropic_key',
+      sonar: 'encrypted_perplexity_key',
+    }
+
+    const encryptedKey = settings[keyMap[provider]]
+
+    // 3. UX Constraint: Hard gate if the specific key for the chosen model is missing
+    if (!encryptedKey) {
+      return {
+        success: false,
+        error: `Model Access Denied: No encrypted key found for ${provider.toUpperCase()}.`,
+      }
+    }
+
+    // 4. Mission Registration
+    const { data: run, error: insertError } = await supabase
+      .from('test_runs')
+      .insert({
+        user_id: userId,
+        url,
+        intent,
+        status: 'QUEUED',
+        mode: 'sniper',
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !run) throw new Error('Failed to register Mission in Argus Database.')
+    createdRunId = run.id
+
+    // 5. Secure Payload Construction (No Base64 security theater)
+    const payload = JSON.stringify({
+      user_id: userId,
+      run_id: createdRunId,
+      api_key: encryptedKey, // Send the encrypted blob; Worker has the MASTER_KEY to decrypt
+      provider,
+      context: { baseUrl: url, testData },
+      instructions: intent,
+    })
+
+    const response = await fetch(process.env.AI_WORKER_URL!, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [base64Payload] }),
+      body: JSON.stringify({ data: [Buffer.from(payload).toString('base64')] }), // Base64 used only for transport, not security
     })
 
-    if (!workerResponse.ok) throw new Error(`Worker returned ${workerResponse.status}`)
-  } catch (err) {
-    console.error('Worker trigger failed:', err)
-    // Update status to FAILED if the worker is unreachable
-    await supabase.from('test_runs').update({ status: 'FAILED' }).eq('id', run.id)
-    return { success: false, error: 'AI Worker is currently offline.' }
+    if (!response.ok) throw new Error(`Worker Uplink Failed: ${response.statusText}`)
+
+    revalidatePath('/runs')
+    return { success: true, runId: createdRunId }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown mission failure'
+    if (createdRunId) {
+      await supabase.from('test_runs').update({ status: 'FAILED' }).eq('id', createdRunId)
+    }
+    return { success: false, error: msg }
   }
-
-  revalidatePath('/dashboard')
-  revalidatePath(`/runs/${run.id}`)
-
-  return { success: true, runId: run.id }
 }

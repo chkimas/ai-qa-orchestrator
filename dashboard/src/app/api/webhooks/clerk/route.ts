@@ -1,17 +1,14 @@
 import { Webhook } from 'svix'
 import { headers } from 'next/headers'
 import { WebhookEvent } from '@clerk/nextjs/server'
-import { getSupabaseAdmin } from '@/lib/supabase'
+import { getSupabaseAdmin, type Database } from '@/lib/supabase'
 
 export async function POST(req: Request) {
-  // 1. Get the CLERK_WEBHOOK_SECRET from environment variables
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
-
   if (!WEBHOOK_SECRET) {
     throw new Error('Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local')
   }
 
-  // 2. Get the headers for verification
   const headerPayload = await headers()
   const svix_id = headerPayload.get('svix-id')
   const svix_timestamp = headerPayload.get('svix-timestamp')
@@ -23,16 +20,13 @@ export async function POST(req: Request) {
     })
   }
 
-  // 3. Get the body
   const payload = await req.json()
   const body = JSON.stringify(payload)
 
-  // 4. Create a new Svix instance with your secret
   const wh = new Webhook(WEBHOOK_SECRET)
 
   let evt: WebhookEvent
 
-  // 5. Verify the payload
   try {
     evt = wh.verify(body, {
       'svix-id': svix_id,
@@ -46,18 +40,24 @@ export async function POST(req: Request) {
     })
   }
 
-  // 6. Handle the webhook logic
   const eventType = evt.type
 
   if (eventType === 'user.created') {
     const { id } = evt.data
     const supabase = getSupabaseAdmin()
 
-    // Initialize the user in your settings table
-    const { error } = await supabase.from('user_settings').insert({
+    const insertData: Database['public']['Tables']['user_settings']['Insert'] = {
       user_id: id,
       preferred_provider: 'gemini',
-    })
+    }
+
+    const { error } = await (
+      supabase.from('user_settings') as unknown as {
+        insert: (values: Database['public']['Tables']['user_settings']['Insert']) => Promise<{
+          error: { message: string } | null
+        }>
+      }
+    ).insert(insertData)
 
     if (error) {
       console.error('Error syncing user to Supabase:', error.message)

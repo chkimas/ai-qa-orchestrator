@@ -1,68 +1,67 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { launchMission } from '@/actions/orchestrator'
+import { useUser } from '@clerk/nextjs'
+import { getVaultStatus } from '@/lib/actions'
 import {
   Play,
   Settings,
   Database,
-  Globe,
-  Lock,
   Sparkles,
-  CheckCircle2,
-  BookOpen,
   X,
+  AlertCircle,
+  Cpu,
+  CheckCircle2,
+  ShieldCheck,
+  Info,
+  BookOpen,
 } from 'lucide-react'
+import { AIProvider } from '@/types/database'
 
 export default function NewRunModal() {
+  const { user } = useUser()
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [showRules, setShowRules] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
+  const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({})
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('gemini')
+  const [hasAnyKey, setHasAnyKey] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // We use Refs to safely access inputs without "document.getElementById" crashes
-  const urlRef = useRef<HTMLInputElement>(null)
-  const roleRef = useRef<HTMLSelectElement>(null)
-  const intentRef = useRef<HTMLTextAreaElement>(null)
-  const dataRef = useRef<HTMLTextAreaElement>(null)
+  const PROVIDERS: { id: AIProvider; name: string }[] = [
+    { id: 'openai', name: 'OpenAI (GPT-4o)' },
+    { id: 'gemini', name: 'Google Gemini' },
+    { id: 'groq', name: 'Groq (Llama 3)' },
+    { id: 'anthropic', name: 'Anthropic (Claude)' },
+    { id: 'sonar', name: 'Perplexity Sonar' },
+  ]
 
-  const fillExample = () => {
-    // Safe filling using React Refs
-    if (urlRef.current) urlRef.current.value = 'https://www.saucedemo.com'
-    if (roleRef.current) roleRef.current.value = 'customer'
-
-    if (intentRef.current) {
-      // ⚡ HYBRID STYLE: Numbered Steps + Strict "SOP" Syntax
-      intentRef.current.value = `
-      1. Navigate to the login page.
-      2. Input '{{username}}' into the Username field.
-      3. Input '{{password}}' into the Password field.
-      4. Click the 'Login' button.
-      5. Verify text 'Products' is visible.
-      6. Click the 'Add to cart' button.
-      7. Verify text '1' is visible in the shopping cart badge.
-      `
-    }
-
-    setShowAdvanced(true)
-
-    setTimeout(() => {
-      if (dataRef.current) {
-        dataRef.current.value = `{\n  "username": "standard_user",\n  "password": "secret_sauce"\n}`
+  useEffect(() => {
+    async function checkVault() {
+      if (!user || !isOpen) return
+      const status = await getVaultStatus()
+      setVaultStatus(status)
+      const anyExist = Object.values(status).some(v => v === true)
+      setHasAnyKey(anyExist)
+      if (anyExist && !status[selectedProvider]) {
+        const firstAvailable = Object.keys(status).find(k => status[k]) as AIProvider
+        if (firstAvailable) setSelectedProvider(firstAvailable)
       }
-    }, 100)
-  }
+    }
+    checkVault()
+  }, [isOpen, user, selectedProvider])
 
   async function handleSubmit(formData: FormData) {
     setIsLoading(true)
+    setError(null)
     const result = await launchMission(formData)
-    setIsLoading(false)
 
     if (result.success) {
-      setIsOpen(false)
       window.location.href = `/runs/${result.runId}`
     } else {
-      alert(result.error)
+      setError(result.error || 'Launch Failed')
+      setIsLoading(false)
     }
   }
 
@@ -70,240 +69,203 @@ export default function NewRunModal() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-500 transition font-medium shadow-lg shadow-blue-900/20 flex items-center gap-2"
+        className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-500 transition font-bold shadow-xl shadow-blue-900/30 flex items-center gap-2 text-sm uppercase tracking-tighter"
       >
-        <Play className="w-4 h-4" /> New Test Run
+        <Play className="w-4 h-4 fill-white" /> Initiate Mission
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 transition-all p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Header */}
-            <div className="bg-slate-950 p-6 border-b border-slate-800 flex justify-between items-center shrink-0">
-              <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-blue-500" />
-                  Configure Test Run
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Define strict parameters for the AI Agent.
-                </p>
+            <header className="bg-slate-950 p-5 border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-lg bg-blue-600/20 flex items-center justify-center border border-blue-500/30">
+                  <Cpu className="text-blue-500" size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-white tracking-tighter">
+                    SNIPER_DEPLOYMENT
+                  </h2>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em]">
+                    Argus Precision Node
+                  </p>
+                </div>
               </div>
               <button
-                type="button"
                 onClick={() => setIsOpen(false)}
-                className="text-slate-500 hover:text-white transition-colors"
+                className="text-slate-500 hover:text-white transition-colors p-2"
               >
-                <X className="w-5 h-5" />
+                <X size={24} />
               </button>
-            </div>
+            </header>
 
-            <div className="overflow-y-auto p-6 custom-scrollbar">
-              {/* 📘 AI RULES GUIDE (Collapsible Guidance) */}
-              <div className="mb-6">
-                <button
-                  type="button"
-                  onClick={() => setShowRules(!showRules)}
-                  className="w-full flex items-center justify-between p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-blue-300 hover:bg-blue-900/30 transition-colors group"
-                >
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-                    <BookOpen className="w-4 h-4" />
-                    <span>How to speak to the AI</span>
+            <form action={handleSubmit} className="p-0">
+              <div className="grid grid-cols-1 md:grid-cols-2">
+                {/* Left Side: Parameters */}
+                <div className="p-6 border-r border-slate-800 space-y-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                      <Settings size={12} /> Neural Engine
+                    </label>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {PROVIDERS.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={!vaultStatus[p.id]}
+                          onClick={() => setSelectedProvider(p.id)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs ${
+                            selectedProvider === p.id
+                              ? 'border-blue-500 bg-blue-500/10 text-white font-bold'
+                              : 'border-slate-800 bg-slate-950/40 text-slate-500'
+                          } ${
+                            !vaultStatus[p.id]
+                              ? 'opacity-30 cursor-not-allowed'
+                              : 'hover:border-slate-700'
+                          }`}
+                        >
+                          {p.name}
+                          {selectedProvider === p.id && (
+                            <CheckCircle2 size={12} className="text-blue-500" />
+                          )}
+                        </button>
+                      ))}
+                      <input type="hidden" name="provider" value={selectedProvider} />
+                    </div>
                   </div>
-                  <span className="text-[10px] bg-blue-900 text-blue-200 px-2 py-1 rounded group-hover:bg-blue-800 transition">
-                    {showRules ? 'Hide Guide' : 'Read Guide'}
-                  </span>
-                </button>
 
-                {showRules && (
-                  <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-400 shadow-sm animate-in slide-in-from-top-2 space-y-3">
-                    <p className="leading-relaxed">
-                      <span className="font-medium text-slate-300 tracking-wide">1. Be Direct</span>
-                      <br />
-                      Start with an action verb. Avoid phrases like
-                      <span className="mx-1 italic text-slate-500">“I want you to…”</span>— instead
-                      use
-                      <span className="mx-1 font-mono text-slate-200">
-                        Verify text &quot;Welcome&quot;
-                      </span>
-                      .
-                    </p>
-
-                    <p className="leading-relaxed">
-                      <span className="font-medium text-slate-300 tracking-wide">
-                        2. Supported Verbs
-                      </span>
-                      <br />
-                      Only the following commands are recognized:
-                      <span className="ml-2 inline-flex flex-wrap gap-1.5 align-middle">
-                        {['Navigate', 'Click', 'Input', 'Verify Text', 'Wait'].map(v => (
-                          <span
-                            key={v}
-                            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-blue-400"
-                          >
-                            {v}
-                          </span>
-                        ))}
-                      </span>
-                    </p>
-
-                    <p className="leading-relaxed">
-                      <span className="font-medium text-slate-300 tracking-wide">3. Variables</span>
-                      <br />
-                      Reference dynamic values using
-                      <code className="mx-1 rounded bg-slate-900 px-1.5 py-0.5 font-mono text-yellow-400">
-                        {'{{variable}}'}
-                      </code>
-                      to avoid hardcoding sensitive data.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <form action={handleSubmit} className="space-y-6">
-                {/* 1. Environment & Role */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      <span className="flex items-center gap-2">
-                        <Globe className="w-3 h-3 text-blue-400" />
-                        Base URL
-                      </span>
-                      <span className="text-[10px] bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800">
-                        REQ
-                      </span>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                      <Info size={12} /> Target URL
                     </label>
                     <input
-                      ref={urlRef}
                       name="url"
                       type="url"
-                      placeholder="https://staging.app.com"
                       required
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder:text-slate-700 font-mono transition-colors hover:border-slate-700"
-                      onBlur={e => {
-                        const val = e.target.value.trim()
-                        if (val && !val.startsWith('http')) e.target.value = `https://${val}`
-                      }}
+                      placeholder="https://..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
 
-                  <div>
-                    <label className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      <span className="flex items-center gap-2">
-                        <Lock className="w-3 h-3 text-purple-400" />
-                        User Role
-                      </span>
-                    </label>
-                    <div className="relative">
-                      <select
-                        ref={roleRef}
-                        name="role"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none cursor-pointer hover:border-slate-700"
-                      >
-                        <option value="customer">Standard User (Customer)</option>
-                        <option value="admin">Administrator</option>
-                        <option value="guest">Guest / Unauthenticated</option>
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
-                        <svg
-                          width="10"
-                          height="6"
-                          viewBox="0 0 10 6"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M1 1L5 5L9 1" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Intent Input */}
-                <div>
-                  <div className="flex justify-between items-end mb-2">
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                      Test Scenario
-                    </label>
-                    <button
-                      type="button"
-                      onClick={fillExample}
-                      className="text-[10px] flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      <Sparkles className="w-3 h-3" /> Fill Example
-                    </button>
-                  </div>
-
-                  <textarea
-                    ref={intentRef}
-                    name="intent"
-                    rows={6}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none resize-none placeholder:text-slate-700 text-sm font-sans leading-relaxed transition-colors hover:border-slate-700"
-                    placeholder="Describe the test steps clearly..."
-                    required
-                  />
-                </div>
-
-                {/* 3. Advanced Data */}
-                <div className="border-t border-slate-800 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mb-3 transition-colors font-medium"
-                  >
-                    {showAdvanced ? '− Hide' : '+ Show'} JSON Data Injection
-                  </button>
-
-                  {showAdvanced && (
-                    <div className="space-y-4 animate-in slide-in-from-top-2 fade-in duration-200">
-                      <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
-                        <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-2">
-                          <Database className="w-3 h-3" />
-                          Test Data (JSON)
-                        </label>
-                        <textarea
-                          ref={dataRef}
-                          name="test_data"
-                          rows={4}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-xs focus:ring-1 focus:ring-yellow-500 outline-none"
-                          placeholder='{"username": "test_user"}'
-                        />
-                      </div>
+                  {!hasAnyKey && (
+                    <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
+                      <AlertCircle className="text-red-500 shrink-0" size={16} />
+                      <p className="text-[10px] text-red-400 font-bold uppercase leading-tight">
+                        Uplink Blocked: Configure keys in System Vault
+                      </p>
                     </div>
                   )}
                 </div>
 
-                {/* Footer Actions */}
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsOpen(false)}
-                    className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
-                    disabled={isLoading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
-                        Architecting Plan...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4" />
-                        Execute Run
-                      </>
+                {/* Right Side: Mission Details */}
+                <div className="p-6 bg-slate-950/30 space-y-6">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Sparkles size={12} /> Intent (Mission Steps)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowGuide(!showGuide)}
+                        className="text-[9px] text-blue-500 hover:text-blue-400 font-bold uppercase border border-blue-500/20 px-2 py-0.5 rounded"
+                      >
+                        {showGuide ? 'Close Guide' : 'AI Guide'}
+                      </button>
+                    </div>
+
+                    {showGuide && (
+                      <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-4 mb-3 animate-in slide-in-from-top-2 duration-300">
+                        <div className="flex items-center gap-2 mb-3 border-b border-blue-500/20 pb-2">
+                          <BookOpen size={12} className="text-blue-400" />
+                          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                            Instruction_Set_vkam
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold mb-1.5 tracking-tighter">
+                              Native Verbs
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {['Navigate', 'Click', 'Input', 'Verify', 'Wait'].map(verb => (
+                                <span
+                                  key={verb}
+                                  className="text-[9px] px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 font-mono rounded"
+                                >
+                                  {verb}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold mb-1.5 tracking-tighter">
+                              Injection Syntax
+                            </p>
+                            <div className="text-[10px] font-mono text-yellow-500/90 bg-yellow-500/5 border border-yellow-500/20 px-2 py-1 rounded">
+                              {'{{key_name}}'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-[9px] text-slate-400 mt-3 leading-relaxed border-t border-slate-800 pt-2 italic">
+                          Argus supports both{' '}
+                          <span className="text-blue-400 font-bold">Sequential Steps</span> (1. 2.
+                          3.) and <span className="text-blue-400 font-bold">Natural Language</span>.
+                          The engine will derive the logical pathing automatically.
+                        </p>
+                      </div>
                     )}
-                  </button>
+
+                    <textarea
+                      name="intent"
+                      rows={5}
+                      required
+                      placeholder="Enter mission steps, e.g., '1. Navigate to /login', '2. Input {{user}}', or 'Go to dashboard, verify Total Revenue {{expected_sum}}'."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 resize-none placeholder:text-slate-600 font-mono leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                      <Database size={12} /> Injection Data (JSON)
+                    </label>
+                    <textarea
+                      name="test_data"
+                      rows={4}
+                      placeholder='{ "user": "admin", "password": "123" }'
+                      className="w-full bg-black border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-[11px] outline-none focus:ring-1 focus:ring-yellow-500/50 resize-none"
+                    />
+                  </div>
                 </div>
-              </form>
-            </div>
+              </div>
+
+              {/* Footer */}
+              <footer className="p-5 bg-slate-950 border-t border-slate-800 flex justify-end gap-3 items-center">
+                <p className="text-[9px] text-slate-600 font-mono uppercase mr-auto tracking-widest flex items-center gap-2">
+                  <ShieldCheck size={12} /> Argus Verification: Ready
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase hover:text-slate-300 transition-colors"
+                >
+                  Abort
+                </button>
+                {error && (
+                  <p className="text-[10px] text-red-500 font-black uppercase mb-2">! {error}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={isLoading || !hasAnyKey}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-tighter px-10 py-2.5 rounded-lg shadow-xl shadow-blue-600/20 transition-all disabled:opacity-20"
+                >
+                  {isLoading ? 'CALCULATING_TRACE...' : 'DEPLOY_SNIPER'}
+                </button>
+              </footer>
+            </form>
           </div>
         </div>
       )}

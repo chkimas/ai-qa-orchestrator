@@ -1,11 +1,20 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
-// Define only the routes that are allowed to be seen WITHOUT logging in.
-// We include the Clerk auth routes so users can actually sign in.
-const isPublicRoute = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)'])
+const isPublicRoute = createRouteMatcher([
+  '/',
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/api/telemetry(.*)',
+])
 
 export default clerkMiddleware(async (auth, request) => {
-  // If the current request is NOT a public route, protect it.
+  const { userId } = await auth()
+  if (userId && request.nextUrl.pathname === '/') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Protect everything else that isn't public
   if (!isPublicRoute(request)) {
     await auth.protect()
   }
@@ -13,7 +22,6 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files (images, favicon, etc.)
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     '/(api|trpc)(.*)',
   ],

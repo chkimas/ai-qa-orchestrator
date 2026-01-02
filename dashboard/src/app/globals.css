@@ -3,19 +3,31 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --canvas: #ffffff;
+  --text: #171717;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --canvas: #05070a;
+    --surface: #0a0a0a;
+    --surface-elev: #0f172a;
+
+    --border: #1e293b;
+    --border-strong: #334155;
+
+    --text: #ededed;
+    --text-strong: #ffffff;
+
+    --success: #22c55e;
+
+    --accent-wash: rgba(59, 130, 246, 0.15);
+    --accent-glow: rgba(37, 99, 235, 0.4);
+
+    --shadow-elev: rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -29,12 +41,68 @@ body {
   width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #0f172a; /* slate-900 */
+  background: #0f172a;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b; /* slate-800 */
+  background: #1e293b;
   border-radius: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #334155; /* slate-700 */
+  background: #334155;
+}
+
+@layer utilities {
+  /* Existing */
+  .bg-circuit {
+    background-image: radial-gradient(
+      circle at 2px 2px,
+      rgba(59, 130, 246, 0.15) 1px,
+      transparent 0
+    );
+    background-size: 40px 40px;
+  }
+
+  /* New: PCB trace layer (still only using rgba(...) + transparent) */
+  .bg-pcb {
+    background-image: radial-gradient(
+        circle at 2px 2px,
+        rgba(59, 130, 246, 0.15) 1px,
+        transparent 0
+      ),
+      repeating-linear-gradient(0deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px),
+      repeating-linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px);
+    background-size: 40px 40px, 240px 240px, 240px 240px;
+    background-position: 0 0, 0 0, 0 0;
+  }
+
+  @keyframes pcb-drift {
+    0% {
+      background-position: 0 0, 0 0, 0 0;
+    }
+    100% {
+      background-position: 80px 80px, 240px 0, 0 240px;
+    }
+  }
+
+  .animate-pcb {
+    animation: pcb-drift 18s linear infinite;
+  }
+
+  @keyframes pulse-line {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-pulse-line {
+    animation: pulse-line 3s linear infinite;
+  }
 }

@@ -1,48 +1,102 @@
-import sqlite3
-import os
+import asyncio
+import logging
+from typing import List, Dict
+from data.supabase_client import db_bridge
+
+logger = logging.getLogger("orchestrator.analyzer")
 
 class RiskAnalyzer:
-    def __init__(self, db_path="data/db/orchestrator.db"):
-        self.db_path = db_path
-
-    def generate_heatmap(self):
-        """Analyzes logs to predict which URLs are most likely to break."""
-        if not os.path.exists(self.db_path): return []
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Risk = (Failures * 2 + Heals) normalized by Complexity
-        query = """
-            SELECT url,
-                   COUNT(*) as total_actions,
-                   SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failures,
-                   SUM(CASE WHEN status = 'HEALED' THEN 1 ELSE 0 END) as heals,
-                   AVG(complexity_score) as avg_complexity
-            FROM logs
-            WHERE url IS NOT NULL AND url != ''
-            GROUP BY url
+    def __init__(self):
         """
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        conn.close()
+        Analyzer initialized. Data is pulled dynamically from
+        Supabase to ensure cross-team intelligence.
+        """
+        pass
 
-        heatmap = []
-        for url, total, fails, heals, complexity in rows:
-            # Algorithm: Higher complexity + higher failure rate = Exponential Risk
-            failure_rate = (fails / total) if total > 0 else 0
-            heal_rate = (heals / total) if total > 0 else 0
+    async def generate_heatmap(self) -> List[Dict]:
+        """
+        Industry-standard Predictive Stability Scoring.
+        Algorithm: Score = ((FailureRate * 0.7) + (HealRate * 0.3)) * ComplexityModifier
+        """
+        try:
+            # Fetch historical telemetry from public.execution_logs
+            logs = await db_bridge.fetch_all_logs(limit=5000)
 
-            # Weighted Score (0-100)
-            base_risk = (failure_rate * 70) + (heal_rate * 30)
-            complexity_modifier = 1.2 if complexity > 10 else 1.0
-            risk_score = min(round(base_risk * complexity_modifier, 1), 100.0)
+            if not logs:
+                logger.info("📡 No telemetry found in Supabase. Heatmap is empty.")
+                return []
 
-            heatmap.append({
-                "url": url,
-                "risk_score": risk_score,
-                "status": "CRITICAL" if risk_score > 60 else "BRITTLE" if risk_score > 25 else "STABLE",
-                "recommendation": "Redesign Selectors" if heals > fails else "Fix Logic"
-            })
+            stats = {}
 
-        return sorted(heatmap, key=lambda x: x['risk_score'], reverse=True)
+            # Process logs into URL-based statistics
+            for entry in logs:
+                # In your schema, URL is often passed via kwargs/details
+                # or is present in the telemetry payload.
+                url = entry.get("url") or "Global/System"
+
+                if url not in stats:
+                    stats[url] = {
+                        "total": 0,
+                        "fails": 0,
+                        "heals": 0,
+                        "complexity_sum": 0
+                    }
+
+                stats[url]["total"] += 1
+
+                # Check status based on public.execution_logs status column
+                if entry.get("status") == "FAILED":
+                    stats[url]["fails"] += 1
+
+                # Healing is identified by the 'action' column
+                if entry.get("action") == "healing":
+                    stats[url]["heals"] += 1
+
+                # Use details to find complexity or default to 5
+                stats[url]["complexity_sum"] += entry.get("complexity_score", 5)
+
+            heatmap = []
+
+            # Calculate Risk Scores
+            for url, data in stats.items():
+                total = data["total"]
+                fail_rate = data["fails"] / total
+                heal_rate = data["heals"] / total
+                avg_complexity = data["complexity_sum"] / total
+
+                # Weighted Logic: Failures are more critical than heals
+                # Heals indicate 'Brittle' code, Failures indicate 'Broken' code
+                base_risk = (fail_rate * 70) + (heal_rate * 30)
+
+                # Apply complexity modifier (Scale of 1.0 to 2.0)
+                risk_score = min(round(base_risk * (1 + avg_complexity / 10), 1), 100.0)
+
+                # Determine Executive Status & Actionable Recommendation
+                if risk_score > 65:
+                    status = "CRITICAL"
+                    recommendation = "🛑 Immediate Fix: Review Business Logic & Selector Stability"
+                elif risk_score > 25:
+                    status = "BRITTLE"
+                    recommendation = "⚠️ Optimization Required: UI Selectors are frequently healing"
+                else:
+                    status = "STABLE"
+                    recommendation = "✅ Standard Maintenance: Flow is performing as expected"
+
+                heatmap.append({
+                    "url": url,
+                    "risk_score": risk_score,
+                    "status": status,
+                    "recommendation": recommendation,
+                    "metrics": {
+                        "total_interactions": total,
+                        "failure_count": data["fails"],
+                        "healing_events": data["heals"]
+                    }
+                })
+
+            # Sort by highest risk first (Standard Executive Requirement)
+            return sorted(heatmap, key=lambda x: x["risk_score"], reverse=True)
+
+        except Exception as e:
+            logger.error(f"❌ Supabase Heatmap Generation Failed: {e}")
+            return []
