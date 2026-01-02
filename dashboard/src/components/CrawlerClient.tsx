@@ -30,28 +30,33 @@ export default function CrawlerClient() {
   const [logs, setLogs] = useState<string>('')
   const [history, setHistory] = useState<CrawlHistoryItem[]>([])
   const terminalRef = useRef<HTMLDivElement>(null)
+  const hasCheckedRef = useRef(false)
+  const [isChecking, setIsChecking] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
   useEffect(() => {
-    async function checkSecurity() {
-      if (!user) return
-      const vault = await getVaultStatus()
-      const vaultKeys = vault.keys as Record<string, boolean>
-      const anyKey = Object.values(vaultKeys).some(v => v === true)
-      setHasKeys(anyKey)
-    }
+    async function initReconNode() {
+      if (!user || hasCheckedRef.current) return
 
-    checkSecurity()
-    refreshHistory()
+      try {
+        const [vault, res] = await Promise.all([getVaultStatus(), getCrawlHistory()])
+        const vaultKeys = vault.keys as Record<string, boolean>
+        const anyKey = Object.values(vaultKeys).some(v => v === true)
+        setHasKeys(anyKey)
+
+        if (res.success && res.history) {
+          setHistory(res.history as CrawlHistoryItem[])
+        }
+        hasCheckedRef.current = true
+      } catch (err) {
+        console.error('Uplink handshake failed:', err)
+      } finally {
+        setIsChecking(false)
+      }
+    }
+    initReconNode()
   }, [user])
-
-  const refreshHistory = async () => {
-    const res = await getCrawlHistory()
-    if (res.success && res.history) {
-      setHistory(res.history as CrawlHistoryItem[])
-    }
-  }
 
   const handleDeploy = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -185,20 +190,32 @@ export default function CrawlerClient() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Side: Parameters */}
         <aside className="w-80 border-r border-slate-800 bg-slate-950 flex flex-col p-6 space-y-8 overflow-y-auto">
-          {!hasKeys && (
-            <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-lg">
+          {isChecking ? (
+            <div className="p-4 border border-slate-800 rounded-lg animate-pulse">
+              <div className="flex items-center gap-2 text-slate-700 font-black text-[10px] uppercase">
+                <Radar size={14} className="animate-spin" /> Verifying_Credentials...
+              </div>
+            </div>
+          ) : !hasKeys ? (
+            <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-lg animate-in zoom-in-95 duration-300">
               <div className="flex items-center gap-2 text-red-500 mb-2 font-black text-[10px] uppercase">
                 <ShieldAlert size={14} /> Security_Lock
               </div>
               <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-                Agent deployment requires neural keys. Initialize System Vault to continue.
+                Agent deployment requires neural keys. Initialize System Vault.
               </p>
               <Link
                 href="/settings"
-                className="block text-center py-2 bg-red-600 text-white text-[10px] font-black uppercase rounded"
+                className="block text-center py-2 bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase rounded transition-colors"
               >
                 Configure_Vault
               </Link>
+            </div>
+          ) : (
+            <div className="p-4 bg-green-500/5 border border-green-500/10 rounded-lg">
+              <div className="flex items-center gap-2 text-green-600 font-black text-[10px] uppercase">
+                <ShieldAlert size={14} /> Neural_Link_Established
+              </div>
             </div>
           )}
 

@@ -175,7 +175,7 @@ export default function NewRunModal() {
                   {/* Neural Engine Selection */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                      <Settings size={12} /> Neural Engine
+                      <Settings size={12} className="text-blue-500" /> Neural Engine
                     </label>
                     <div className="grid grid-cols-1 gap-1.5">
                       {PROVIDERS.map(p => (
@@ -185,13 +185,28 @@ export default function NewRunModal() {
                           disabled={!vaultStatus[p.id]}
                           onClick={() => {
                             setSelectedProvider(p.id)
-                            if (MODEL_MAPPING[p.id]) {
-                              setSelectedModel(MODEL_MAPPING[p.id][0].id)
-                            }
+                            if (MODEL_MAPPING[p.id]) setSelectedModel(MODEL_MAPPING[p.id][0].id)
                           }}
-                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs ...`}
+                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs outline-none ${
+                            selectedProvider === p.id
+                              ? 'border-blue-500 bg-blue-500/10 text-white shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                              : 'border-slate-800/60 bg-slate-950/40 text-slate-500 hover:border-slate-700'
+                          } ${
+                            !vaultStatus[p.id]
+                              ? 'opacity-20 cursor-not-allowed border-dashed'
+                              : 'cursor-pointer'
+                          }`}
                         >
-                          {p.name}
+                          <span className="flex items-center gap-2">
+                            <div
+                              className={`w-1 h-1 rounded-full ${
+                                selectedProvider === p.id
+                                  ? 'bg-blue-400 animate-pulse'
+                                  : 'bg-slate-700'
+                              }`}
+                            />
+                            {p.name}
+                          </span>
                           {selectedProvider === p.id && (
                             <CheckCircle2 size={12} className="text-blue-500" />
                           )}

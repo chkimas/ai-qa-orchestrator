@@ -1,40 +1,44 @@
 @import 'tailwindcss';
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --canvas: #ffffff;
-  --text: #171717;
+  --background: #05070a;
+  --foreground: #ededed;
+  --canvas: #05070a;
+  --surface: #0a0a0a;
+  --surface-elev: #0f172a;
+  --border: #1e293b;
+  --border-strong: #334155;
+  --text: #ededed;
+  --text-strong: #ffffff;
+  --success: #22c55e;
+  --accent-wash: rgba(59, 130, 246, 0.15);
+  --accent-glow: rgba(37, 99, 235, 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #05070a;
     --foreground: #ededed;
-
-    --canvas: #05070a;
-    --surface: #0a0a0a;
-    --surface-elev: #0f172a;
-
-    --border: #1e293b;
-    --border-strong: #334155;
-
-    --text: #ededed;
-    --text-strong: #ffffff;
-
-    --success: #22c55e;
-
-    --accent-wash: rgba(59, 130, 246, 0.15);
-    --accent-glow: rgba(37, 99, 235, 0.4);
-
-    --shadow-elev: rgba(0, 0, 0, 0.5);
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--border);
+  }
+
+  button {
+    border-color: transparent;
+  }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -47,12 +51,8 @@ body {
   background: #1e293b;
   border-radius: 10px;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #334155;
-}
 
 @layer utilities {
-  /* Existing */
   .bg-circuit {
     background-image: radial-gradient(
       circle at 2px 2px,
@@ -62,7 +62,6 @@ body {
     background-size: 40px 40px;
   }
 
-  /* New: PCB trace layer (still only using rgba(...) + transparent) */
   .bg-pcb {
     background-image: radial-gradient(
         circle at 2px 2px,
@@ -72,20 +71,6 @@ body {
       repeating-linear-gradient(0deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px),
       repeating-linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px);
     background-size: 40px 40px, 240px 240px, 240px 240px;
-    background-position: 0 0, 0 0, 0 0;
-  }
-
-  @keyframes pcb-drift {
-    0% {
-      background-position: 0 0, 0 0, 0 0;
-    }
-    100% {
-      background-position: 80px 80px, 240px 0, 0 240px;
-    }
-  }
-
-  .animate-pcb {
-    animation: pcb-drift 18s linear infinite;
   }
 
   @keyframes pulse-line {
