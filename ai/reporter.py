@@ -4,7 +4,7 @@ import re
 from ai.provider import generate_response
 from ai.analyzer import RiskAnalyzer
 
-def generate_report(crawl_data: list, total_time_seconds: float = 0.0):
+def QA_Reporter(crawl_data: list, total_time_seconds: float = 0.0):
     total_pages = len(crawl_data)
     total_tests = len([d for d in crawl_data if d.get('test_executed')])
     passed = len([d for d in crawl_data if "PASS" in str(d.get('test_result', ''))])
