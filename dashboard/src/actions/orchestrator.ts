@@ -103,7 +103,7 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
       instructions: intent,
     })
 
-    const workerUrl = `${process.env.AI_WORKER_URL}/predict`
+    const workerUrl = `${process.env.AI_WORKER_URL}/mission`
 
     const response = await fetch(workerUrl, {
       method: 'POST',

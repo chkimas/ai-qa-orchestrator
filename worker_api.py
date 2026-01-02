@@ -20,7 +20,7 @@ async def health_check():
         "workload": "idle"
     }
 
-@app.post("/predict")
+@app.post("/mission")
 async def trigger_test(request: Request, background_tasks: BackgroundTasks):
     """
     MISSION DISPATCH ENDPOINT
