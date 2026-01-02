@@ -5,6 +5,7 @@ pytest-playwright==0.6.2
 # --- Data Validation & Typing ---
 pydantic==2.10.4
 pydantic-settings==2.7.0
+jsonschema==4.23.0
 
 # --- AI & Orchestration ---
 google-genai==0.3.0
