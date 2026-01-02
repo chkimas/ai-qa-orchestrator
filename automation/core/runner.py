@@ -10,15 +10,16 @@ from data.supabase_client import db_bridge
 logger = logging.getLogger("orchestrator.runner")
 
 class AutomationRunner:
-    def __init__(self, run_id: str, provider: str = None, api_key: str = None, base_url: str = None):
+    def __init__(self, run_id: str, provider: str = None, model: str = None, api_key: str = None, base_url: str = None):
         self.run_id = run_id
         self.provider = provider
+        self.model = model
         self.api_key = api_key
         self.base_url = base_url
         self.browser_context = None
         self.page = None
         self._playwright = None
-        self.healing_audit: List[str] = [] # Mission debrief storage
+        self.healing_audit: List[str] = []
 
     async def start_browser(self, headless: bool = True):
         self._playwright = await async_playwright().start()
@@ -64,6 +65,7 @@ class AutomationRunner:
         db_bridge.log_step(
             run_id=self.run_id, role=role, action=action_val,
             status="RUNNING", message=step.description,
+            url=self.page.url if self.page else self.base_url,
             selector=step.selector, value=step.value
         )
 
@@ -73,6 +75,7 @@ class AutomationRunner:
             db_bridge.log_step(
                 run_id=self.run_id, role=role, action=action_val,
                 status="PASSED", message="Verified successfully.",
+                url=self.page.url,
                 selector=step.selector, value=step.value
             )
 
@@ -80,7 +83,7 @@ class AutomationRunner:
             logger.warning("Step failed. Attempting recovery...")
             db_bridge.log_step(
                 run_id=self.run_id, role="system", action="healing",
-                status="RUNNING", message=f"UI discrepancy at '{step.selector}'. Healing in progress..."
+                status="RUNNING", message=f"UI discrepancy at '{step.selector}'. Healing..."
             )
 
             heal_result = await self._try_healing(step, e)
@@ -90,6 +93,7 @@ class AutomationRunner:
                 db_bridge.log_step(
                     run_id=self.run_id, role=role, action=action_val,
                     status="PASSED", message=f"Healed: {heal_result['reasoning']}",
+                    url=self.page.url,
                     selector=heal_result['selector'], value=step.value
                 )
             else:
@@ -98,7 +102,9 @@ class AutomationRunner:
     async def _try_healing(self, step: TestStep, original_error: Exception) -> Optional[dict]:
         heal_data = await heal_selector(
             self.page, step.selector, step.description,
-            provider=self.provider, encrypted_key=self.api_key
+            provider=self.provider,
+            model=self.model,
+            encrypted_key=self.api_key
         )
         if heal_data:
             await self._perform_action(step.action, heal_data['selector'], step.value)

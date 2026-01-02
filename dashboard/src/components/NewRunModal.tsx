@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { launchMission } from '@/actions/orchestrator'
 import { useUser } from '@clerk/nextjs'
 import { getVaultStatus } from '@/lib/actions'
@@ -16,17 +16,69 @@ import {
   ShieldCheck,
   Info,
   BookOpen,
+  ChevronDown,
+  Zap,
 } from 'lucide-react'
 import { AIProvider } from '@/types/database'
 
+const MODEL_MAPPING: Record<string, { id: string; label: string; desc: string }[]> = {
+  openai: [
+    { id: 'gpt-4o', label: 'GPT-4o', desc: 'Omni engine; swift multimodal judgment.' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', desc: 'Lean compute; high-throughput replies.' },
+  ],
+  gemini: [
+    {
+      id: 'gemini-1.5-pro',
+      label: 'Gemini 1.5 Pro',
+      desc: 'Long context; steadfast deep reasoning.',
+    },
+    {
+      id: 'gemini-1.5-flash',
+      label: 'Gemini 1.5 Flash',
+      desc: 'Low-latency burst; nimble inference.',
+    },
+  ],
+  groq: [
+    {
+      id: 'llama-3.1-70b-versatile',
+      label: 'Llama 3.1 70B',
+      desc: 'Generalist; broad competence at scale.',
+    },
+    { id: 'llama3-8b-8192', label: 'Llama 3 8B', desc: 'Sprinter; 8k context, fast turn.' },
+  ],
+  anthropic: [
+    {
+      id: 'claude-3-5-sonnet-20240620',
+      label: 'Claude 3.5 Sonnet',
+      desc: 'Keen for code; high-fidelity reasoning.',
+    },
+    {
+      id: 'claude-3-haiku-20240307',
+      label: 'Claude 3 Haiku',
+      desc: 'Quick as breath; low-cost inference.',
+    },
+  ],
+  sonar: [
+    { id: 'sonar', label: 'Sonar', desc: 'Web-grounded chat; answers with receipts.' },
+    {
+      id: 'sonar-reasoning',
+      label: 'Sonar Reasoning',
+      desc: 'Deliberate solver; citation-led inquiry.',
+    },
+  ],
+}
+
 export default function NewRunModal() {
   const { user } = useUser()
+  const hasSyncedRef = useRef(false)
+  const [selectedModel, setSelectedModel] = useState<string>('')
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({})
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>('gemini')
   const [hasAnyKey, setHasAnyKey] = useState<boolean>(true)
+  const [isChaos, setIsChaos] = useState(false) // NEW: Chaos State
   const [error, setError] = useState<string | null>(null)
 
   const PROVIDERS: { id: AIProvider; name: string }[] = [
@@ -38,15 +90,33 @@ export default function NewRunModal() {
   ]
 
   useEffect(() => {
+    if (!isOpen) {
+      hasSyncedRef.current = false
+      return
+    }
+
     async function checkVault() {
       if (!user || !isOpen) return
-      const status = await getVaultStatus()
-      setVaultStatus(status)
-      const anyExist = Object.values(status).some(v => v === true)
+      const data = await getVaultStatus()
+      const vaultKeys = data.keys as Record<string, boolean>
+      setVaultStatus(vaultKeys)
+      const anyExist = Object.values(vaultKeys).some(v => v === true)
       setHasAnyKey(anyExist)
-      if (anyExist && !status[selectedProvider]) {
-        const firstAvailable = Object.keys(status).find(k => status[k]) as AIProvider
-        if (firstAvailable) setSelectedProvider(firstAvailable)
+
+      if (anyExist && !hasSyncedRef.current) {
+        let providerToSet = selectedProvider
+        if (data.preferred && vaultKeys[data.preferred]) {
+          providerToSet = data.preferred as AIProvider
+        } else if (!vaultKeys[selectedProvider]) {
+          const firstAvailable = Object.keys(vaultKeys).find(k => vaultKeys[k]) as AIProvider
+          if (firstAvailable) providerToSet = firstAvailable
+        }
+
+        setSelectedProvider(providerToSet)
+        if (MODEL_MAPPING[providerToSet]) {
+          setSelectedModel(MODEL_MAPPING[providerToSet][0].id)
+        }
+        hasSyncedRef.current = true
       }
     }
     checkVault()
@@ -77,15 +147,14 @@ export default function NewRunModal() {
       {isOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Header */}
             <header className="bg-slate-950 p-5 border-b border-slate-800 flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-lg bg-blue-600/20 flex items-center justify-center border border-blue-500/30">
                   <Cpu className="text-blue-500" size={20} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-white tracking-tighter">
-                    SNIPER_DEPLOYMENT
+                  <h2 className="text-lg font-black text-white tracking-tighter uppercase">
+                    Sniper_Deployment
                   </h2>
                   <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em]">
                     Argus Precision Node
@@ -100,10 +169,10 @@ export default function NewRunModal() {
               </button>
             </header>
 
-            <form action={handleSubmit} className="p-0">
+            <form action={handleSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2">
-                {/* Left Side: Parameters */}
                 <div className="p-6 border-r border-slate-800 space-y-6">
+                  {/* Neural Engine Selection */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                       <Settings size={12} /> Neural Engine
@@ -114,16 +183,13 @@ export default function NewRunModal() {
                           key={p.id}
                           type="button"
                           disabled={!vaultStatus[p.id]}
-                          onClick={() => setSelectedProvider(p.id)}
-                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs ${
-                            selectedProvider === p.id
-                              ? 'border-blue-500 bg-blue-500/10 text-white font-bold'
-                              : 'border-slate-800 bg-slate-950/40 text-slate-500'
-                          } ${
-                            !vaultStatus[p.id]
-                              ? 'opacity-30 cursor-not-allowed'
-                              : 'hover:border-slate-700'
-                          }`}
+                          onClick={() => {
+                            setSelectedProvider(p.id)
+                            if (MODEL_MAPPING[p.id]) {
+                              setSelectedModel(MODEL_MAPPING[p.id][0].id)
+                            }
+                          }}
+                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs ...`}
                         >
                           {p.name}
                           {selectedProvider === p.id && (
@@ -132,6 +198,40 @@ export default function NewRunModal() {
                         </button>
                       ))}
                       <input type="hidden" name="provider" value={selectedProvider} />
+                    </div>
+                  </div>
+
+                  {/* Model Configuration Dropdown */}
+                  <div className="space-y-2.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                      <Cpu size={12} className="text-blue-500" /> Model Configuration
+                    </label>
+                    <div className="relative group">
+                      <select
+                        name="model"
+                        value={selectedModel}
+                        onChange={e => setSelectedModel(e.target.value)}
+                        className="w-full appearance-none bg-slate-950/40 border border-slate-800 rounded-md pl-3 pr-10 py-2.5 text-[11px] font-mono text-slate-300 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all cursor-pointer hover:bg-slate-900/60"
+                      >
+                        {MODEL_MAPPING[selectedProvider]?.map(model => (
+                          <option key={model.id} value={model.id} className="bg-[#0b0e14]">
+                            {model.label.toUpperCase()} — {model.desc.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-0 top-0 h-full w-10 flex items-center justify-center pointer-events-none border-l border-slate-800/50">
+                        <ChevronDown
+                          size={14}
+                          className="text-slate-500 group-hover:text-blue-400"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
+                      <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
+                        Stream_Ready: {selectedProvider.toUpperCase()}_
+                        {selectedModel?.replace(/-/g, '_').toUpperCase()}
+                      </span>
                     </div>
                   </div>
 
@@ -151,14 +251,13 @@ export default function NewRunModal() {
                   {!hasAnyKey && (
                     <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
                       <AlertCircle className="text-red-500 shrink-0" size={16} />
-                      <p className="text-[10px] text-red-400 font-bold uppercase leading-tight">
+                      <p className="text-[10px] text-red-400 font-bold uppercase">
                         Uplink Blocked: Configure keys in System Vault
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Right Side: Mission Details */}
                 <div className="p-6 bg-slate-950/30 space-y-6">
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
@@ -173,7 +272,6 @@ export default function NewRunModal() {
                         {showGuide ? 'Close Guide' : 'AI Guide'}
                       </button>
                     </div>
-
                     {showGuide && (
                       <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-4 mb-3 animate-in slide-in-from-top-2 duration-300">
                         <div className="flex items-center gap-2 mb-3 border-b border-blue-500/20 pb-2">
@@ -182,49 +280,17 @@ export default function NewRunModal() {
                             Instruction_Set_vkam
                           </span>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-[9px] text-slate-500 uppercase font-bold mb-1.5 tracking-tighter">
-                              Native Verbs
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {['Navigate', 'Click', 'Input', 'Verify', 'Wait'].map(verb => (
-                                <span
-                                  key={verb}
-                                  className="text-[9px] px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 font-mono rounded"
-                                >
-                                  {verb}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <p className="text-[9px] text-slate-500 uppercase font-bold mb-1.5 tracking-tighter">
-                              Injection Syntax
-                            </p>
-                            <div className="text-[10px] font-mono text-yellow-500/90 bg-yellow-500/5 border border-yellow-500/20 px-2 py-1 rounded">
-                              {'{{key_name}}'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <p className="text-[9px] text-slate-400 mt-3 leading-relaxed border-t border-slate-800 pt-2 italic">
-                          Argus supports both{' '}
-                          <span className="text-blue-400 font-bold">Sequential Steps</span> (1. 2.
-                          3.) and <span className="text-blue-400 font-bold">Natural Language</span>.
-                          The engine will derive the logical pathing automatically.
+                        <p className="text-[9px] text-slate-400 leading-relaxed italic">
+                          Argus supports Sequential Steps and Natural Language pathing.
                         </p>
                       </div>
                     )}
-
                     <textarea
                       name="intent"
                       rows={5}
                       required
-                      placeholder="Enter mission steps, e.g., '1. Navigate to /login', '2. Input {{user}}', or 'Go to dashboard, verify Total Revenue {{expected_sum}}'."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 resize-none placeholder:text-slate-600 font-mono leading-relaxed"
+                      placeholder="e.g., '1. Navigate to /login', '2. Input {{user}}'..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
 
@@ -235,35 +301,68 @@ export default function NewRunModal() {
                     <textarea
                       name="test_data"
                       rows={4}
-                      placeholder='{ "user": "admin", "password": "123" }'
-                      className="w-full bg-black border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-[11px] outline-none focus:ring-1 focus:ring-yellow-500/50 resize-none"
+                      placeholder='{ "user": "admin" }'
+                      className="w-full bg-black border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-[11px] outline-none"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Footer */}
-              <footer className="p-5 bg-slate-950 border-t border-slate-800 flex justify-end gap-3 items-center">
-                <p className="text-[9px] text-slate-600 font-mono uppercase mr-auto tracking-widest flex items-center gap-2">
-                  <ShieldCheck size={12} /> Argus Verification: Ready
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase hover:text-slate-300 transition-colors"
-                >
-                  Abort
-                </button>
-                {error && (
-                  <p className="text-[10px] text-red-500 font-black uppercase mb-2">! {error}</p>
-                )}
-                <button
-                  type="submit"
-                  disabled={isLoading || !hasAnyKey}
-                  className="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-tighter px-10 py-2.5 rounded-lg shadow-xl shadow-blue-600/20 transition-all disabled:opacity-20"
-                >
-                  {isLoading ? 'CALCULATING_TRACE...' : 'DEPLOY_SNIPER'}
-                </button>
+              <footer className="p-5 bg-slate-950 border-t border-slate-800 flex justify-between items-center">
+                <div className="flex items-center gap-6">
+                  {/* CHAOS PROTOCOL TOGGLE */}
+                  <div className="flex items-center gap-3 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 group hover:border-red-500/30 transition-colors">
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="is_chaos"
+                        id="is_chaos"
+                        checked={isChaos}
+                        onChange={e => setIsChaos(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:bg-red-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 transition-colors"></div>
+                    </div>
+                    <label
+                      htmlFor="is_chaos"
+                      className={`text-[9px] font-black uppercase tracking-[0.15em] cursor-pointer transition-colors ${
+                        isChaos ? 'text-red-500' : 'text-slate-500'
+                      }`}
+                    >
+                      {isChaos ? 'Chaos_Active' : 'Chaos_Protocol'}
+                    </label>
+                    <Zap
+                      size={10}
+                      className={`${isChaos ? 'text-red-500 animate-pulse' : 'text-slate-700'}`}
+                    />
+                  </div>
+
+                  <p className="text-[9px] text-slate-600 font-mono uppercase tracking-widest flex items-center gap-2">
+                    <ShieldCheck size={12} /> Status: Ready
+                  </p>
+                </div>
+
+                <div className="flex gap-3 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase hover:text-slate-300"
+                  >
+                    Abort
+                  </button>
+                  {error && (
+                    <p className="text-[10px] text-red-500 font-black uppercase tracking-tighter mr-2">
+                      {error}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isLoading || !hasAnyKey}
+                    className="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-tighter px-10 py-2.5 rounded-lg shadow-xl shadow-blue-600/20 disabled:opacity-20 transition-all"
+                  >
+                    {isLoading ? 'CALCULATING_TRACE...' : 'DEPLOY_SNIPER'}
+                  </button>
+                </div>
               </footer>
             </form>
           </div>

@@ -16,7 +16,7 @@ const PROVIDERS: { id: ProviderType; name: string; prefix: string }[] = [
   { id: 'sonar', name: 'Perplexity Sonar', prefix: 'pplx-' },
 ]
 
-export default function SettingsPage() {
+export default function SettingsClient() {
   const { user } = useUser()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -43,8 +43,13 @@ export default function SettingsPage() {
   useEffect(() => {
     async function fetchSettings() {
       if (!user) return
-      const status = await getVaultStatus()
-      setHasStoredKey(status)
+
+      const data = await getVaultStatus()
+      setHasStoredKey(data.keys as Record<string, boolean>)
+      if (data.preferred) {
+        setPreferred(data.preferred as ProviderType)
+      }
+
       setLoading(false)
     }
     fetchSettings()
@@ -262,9 +267,9 @@ export default function SettingsPage() {
                 aria-live="polite"
                 aria-atomic="true"
               >
-                {keys[preferred] !== '' && (
-                  <span className="text-[8px] text-blue-400 uppercase font-black animate-pulse">
-                    ● New Key Detected: Store in Vault to Validate
+                {Object.values(keys).some(k => k !== '') && (
+                  <span className="text-[8px] text-blue-400 uppercase font-black animate-pulse flex items-center gap-1">
+                    <ShieldCheck size={10} /> Pending Changes: Store in Vault to Test
                   </span>
                 )}
                 {!canSave && saving === 'idle' && (

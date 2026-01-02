@@ -10,6 +10,8 @@ const LaunchSchema = z.object({
   url: z.string().url('Invalid target URL'),
   intent: z.string().min(5, 'Intent too short'),
   provider: z.enum(['groq', 'gemini', 'openai', 'anthropic', 'sonar']) as z.ZodType<AIProvider>,
+  model: z.string().min(1, 'Target model required'),
+  is_chaos: z.boolean().default(false),
   testData: z
     .string()
     .optional()
@@ -28,10 +30,14 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
   const { userId } = await auth()
   if (!userId) return { success: false, error: 'Unauthorized: No active session.' }
 
+  const isChaosChecked = formData.get('is_chaos') === 'on'
+
   const validated = LaunchSchema.safeParse({
     url: formData.get('url'),
     intent: formData.get('intent'),
     provider: formData.get('provider'),
+    model: formData.get('model'),
+    is_chaos: isChaosChecked,
     testData: formData.get('test_data'),
   })
 
@@ -39,12 +45,11 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
     return { success: false, error: validated.error.issues[0].message }
   }
 
-  const { url, intent, provider, testData } = validated.data
+  const { url, intent, provider, model, is_chaos, testData } = validated.data
   const supabase = getSupabaseAdmin()
   let createdRunId: string | null = null
 
   try {
-    // 1. Fetch encrypted keys and preferred settings
     const { data: settings, error: sError } = await supabase
       .from('user_settings')
       .select('*')
@@ -55,7 +60,6 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
       return { success: false, error: 'System Config missing. Please visit Settings.' }
     }
 
-    // 2. Map provider to specific encrypted key column
     const keyMap: Record<AIProvider, keyof UserSettings> = {
       openai: 'encrypted_openai_key',
       gemini: 'encrypted_gemini_key',
@@ -66,7 +70,6 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
 
     const encryptedKey = settings[keyMap[provider]]
 
-    // 3. UX Constraint: Hard gate if the specific key for the chosen model is missing
     if (!encryptedKey) {
       return {
         success: false,
@@ -74,7 +77,6 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
       }
     }
 
-    // 4. Mission Registration
     const { data: run, error: insertError } = await supabase
       .from('test_runs')
       .insert({
@@ -82,7 +84,7 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
         url,
         intent,
         status: 'QUEUED',
-        mode: 'sniper',
+        mode: is_chaos ? 'chaos' : 'sniper',
       })
       .select('id')
       .single()
@@ -90,20 +92,23 @@ export async function launchMission(formData: FormData): Promise<MissionResult> 
     if (insertError || !run) throw new Error('Failed to register Mission in Argus Database.')
     createdRunId = run.id
 
-    // 5. Secure Payload Construction (No Base64 security theater)
     const payload = JSON.stringify({
       user_id: userId,
       run_id: createdRunId,
-      api_key: encryptedKey, // Send the encrypted blob; Worker has the MASTER_KEY to decrypt
+      api_key: encryptedKey,
       provider,
+      model,
+      mode: is_chaos ? 'chaos' : 'sniper',
       context: { baseUrl: url, testData },
       instructions: intent,
     })
 
-    const response = await fetch(process.env.AI_WORKER_URL!, {
+    const workerUrl = `${process.env.AI_WORKER_URL}/predict`
+
+    const response = await fetch(workerUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [Buffer.from(payload).toString('base64')] }), // Base64 used only for transport, not security
+      body: JSON.stringify({ data: [Buffer.from(payload).toString('base64')] }),
     })
 
     if (!response.ok) throw new Error(`Worker Uplink Failed: ${response.statusText}`)

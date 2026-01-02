@@ -72,8 +72,18 @@ const PROVIDER_STRATEGIES: Record<
   sonar: {
     url: 'https://api.perplexity.ai/chat/completions',
     method: 'POST',
-    headers: key => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }),
-    body: { model: 'sonar', messages: [{ role: 'system', content: 'test' }], max_tokens: 1 },
+    headers: (key: string) => ({
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    }),
+    body: {
+      model: 'sonar',
+      messages: [
+        { role: 'system', content: 'Be precise.' },
+        { role: 'user', content: 'ping' },
+      ],
+      max_tokens: 1,
+    },
   },
   gemini: {
     url: 'https://generativelanguage.googleapis.com/v1beta/models',
@@ -154,9 +164,13 @@ export async function saveVault(formData: FormData): Promise<ActionResponse> {
   }
 }
 
-export async function getVaultStatus(): Promise<Record<string, boolean>> {
+export async function getVaultStatus() {
   const { userId } = await auth()
-  if (!userId) return {}
+  if (!userId)
+    return {
+      keys: { openai: false, gemini: false, groq: false, anthropic: false, sonar: false },
+      preferred: 'gemini',
+    }
 
   const admin = getSupabaseAdmin()
   const { data: settings } = await admin
@@ -166,11 +180,14 @@ export async function getVaultStatus(): Promise<Record<string, boolean>> {
     .maybeSingle()
 
   return {
-    openai: !!settings?.encrypted_openai_key,
-    gemini: !!settings?.encrypted_gemini_key,
-    groq: !!settings?.encrypted_groq_key,
-    anthropic: !!settings?.encrypted_anthropic_key,
-    sonar: !!settings?.encrypted_perplexity_key,
+    keys: {
+      openai: !!settings?.encrypted_openai_key,
+      gemini: !!settings?.encrypted_gemini_key,
+      groq: !!settings?.encrypted_groq_key,
+      anthropic: !!settings?.encrypted_anthropic_key,
+      sonar: !!settings?.encrypted_perplexity_key,
+    },
+    preferred: settings?.preferred_provider || 'gemini',
   }
 }
 
@@ -559,11 +576,9 @@ export async function testProviderKey(
   provider: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    // 1. IDENTITY & AUTHORIZATION
     const { userId } = await auth()
     if (!userId) throw new Error('AUTH_UNAUTHORIZED')
 
-    // 2. DATABASE HANDSHAKE
     const admin = getSupabaseAdmin()
     const { data: settings, error: dbError } = await admin
       .from('user_settings')
@@ -573,7 +588,6 @@ export async function testProviderKey(
 
     if (dbError || !settings) throw new Error('VAULT_NOT_FOUND')
 
-    // 3. KEY RESOLUTION & DECRYPTION
     const keyMap: Record<string, string | null> = {
       openai: settings.encrypted_openai_key,
       gemini: settings.encrypted_gemini_key,
@@ -588,14 +602,10 @@ export async function testProviderKey(
     const apiKey = decrypt(encryptedKey)
     if (!apiKey) throw new Error('DECRYPTION_FAILED')
 
-    // 4. STRATEGY EXECUTION
     const strategy = PROVIDER_STRATEGIES[provider]
     if (!strategy) throw new Error('UNSUPPORTED_PROVIDER')
 
-    // Handle Gemini's specific URL-based key auth
     const finalUrl = provider === 'gemini' ? `${strategy.url}?key=${apiKey}` : strategy.url
-
-    // 5. THE HANDSHAKE (Timeout-protected)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000) // 8s timeout
 

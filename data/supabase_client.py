@@ -14,7 +14,7 @@ class SupabaseBridge:
     def log_step(self, run_id: str, step_id: int = 0, role: str = "customer",
                  action: str = "info", status: str = "INFO", message: str = "", **kwargs):
         """
-        Aligned with public.execution_logs schema.
+        Telemetry Hub: Writes real-time logs to Supabase.
         """
         if not self.client: return
 
@@ -25,6 +25,7 @@ class SupabaseBridge:
             "action": action,
             "status": status,
             "message": message,
+            "url": kwargs.get("url"),
             "details": kwargs.get("details", ""),
             "selector": kwargs.get("selector"),
             "value": kwargs.get("value")
@@ -52,6 +53,17 @@ class SupabaseBridge:
             self.client.table("element_fingerprints").upsert(payload, on_conflict="url,selector").execute()
         except Exception as e:
             logger.error(f"Fingerprint storage failed: {e}")
+
+    def start_run(self, run_id: str, mode: str):
+        """NEW: Signal to Supabase that the mission is now active."""
+        if not self.client: return False
+        try:
+            self.client.table("test_runs").update({
+                "status": "RUNNING",
+                "mode": mode
+            }).eq("id", run_id).execute()
+            return True
+        except Exception: return False
 
     def update_run_status(self, run_id: str, status: str):
         """Aligned with public.test_runs status enum."""

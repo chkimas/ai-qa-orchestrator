@@ -153,37 +153,40 @@ function ArgusMythicBackground() {
 
 export default function LandingPage() {
   const { isSignedIn } = useUser()
-  const [latency, setLatency] = useState<number>(0)
   const [isScrolled, setIsScrolled] = useState(false)
-
-  // FIX: Using useMemo to resolve "cascading render" ESLint error for setNodeLocation
-  const nodeLocation = useMemo(() => {
-    if (typeof window === 'undefined') return 'NODE_SYNCING'
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    if (zone.includes('Asia')) return 'NODE_ASIA_PACIFIC'
-    if (zone.includes('America')) return 'NODE_NORTH_AMERICA'
-    if (zone.includes('Europe')) return 'NODE_EUROPE_WEST'
-    return 'NODE_GLOBAL_UPLINK'
-  }, [])
+  const [latency, setLatency] = useState<number>(0)
+  const [nodeLocation, setNodeLocation] = useState('NODE_SYNCING')
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 16)
-    }
+    const handleScroll = () => setIsScrolled(window.scrollY > 16)
     window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
+    const initClientMetrics = () => {
+      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      let location = 'NODE_GLOBAL_UPLINK'
+      if (zone.includes('Asia')) location = 'NODE_ASIA_PACIFIC'
+      else if (zone.includes('America')) location = 'NODE_NORTH_AMERICA'
+      else if (zone.includes('Europe')) location = 'NODE_EUROPE_WEST'
+
+      let measuredLatency = 24
       if (typeof window !== 'undefined' && window.performance) {
-        const perf = window.performance.timing
-        const loadTime = perf.loadEventEnd - perf.navigationStart
-        const measuredLatency = loadTime > 0 ? Math.abs(loadTime % 100) : 24
-        setLatency(measuredLatency)
+        const navEntry = window.performance.getEntriesByType(
+          'navigation'
+        )[0] as PerformanceNavigationTiming
+        if (navEntry) {
+          measuredLatency = Math.floor(navEntry.duration % 100)
+        }
       }
-    }, 100)
-    return () => clearTimeout(timer)
+
+      // Update state once for both values
+      setNodeLocation(location)
+      setLatency(measuredLatency)
+    }
+    const metricsTimer = setTimeout(initClientMetrics, 0)
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      clearTimeout(metricsTimer)
+    }
   }, [])
 
   const scrollToFeatures = () => {

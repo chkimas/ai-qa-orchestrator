@@ -10,7 +10,6 @@ from ai.provider import ModelGateway
 logger = logging.getLogger("orchestrator.planner")
 
 # --- THE AUDITOR'S CONTRACT ---
-# This schema defines exactly what a valid test step must look like.
 TEST_STEP_SCHEMA = {
     "type": "array",
     "items": {
@@ -60,10 +59,11 @@ async def generate_test_plan(
     raw_input: str,
     system_prompt_override: str = None,
     provider: Optional[str] = None,
+    model: Optional[str] = None,
     encrypted_key: Optional[str] = None
 ) -> TestPlan:
     """
-    Generates a test plan with a Self-Correction Loop for 99.9% reliability.
+    Generates a test plan using the specified provider and model.
     """
     base_prompt = system_prompt_override or PLANNER_SYSTEM_PROMPT
     full_prompt = f"{base_prompt}\n\nINTENT: {raw_input}"
@@ -81,28 +81,22 @@ async def generate_test_plan(
         try:
             current_prompt = full_prompt
             if last_error_feedback:
-                # Tell the AI exactly what it did wrong so it can fix it
-                current_prompt += f"\n\n⚠️ REPAIR INSTRUCTION: Your previous output was invalid:\n{last_error_feedback}\nFix the JSON structure and return ONLY the valid array."
+                current_prompt += f"\n\n⚠️ REPAIR INSTRUCTION: Your previous output was invalid:\n{last_error_feedback}\nFix the JSON structure."
 
+            # PASSING THE MODEL DOWN TO THE GATEWAY
             response_text = await ModelGateway.generate_response(
                 prompt=current_prompt,
                 provider=provider,
+                model=model,
                 encrypted_key=encrypted_key
             )
 
-            print(f"DEBUG_AI_OUTPUT (Attempt {attempts+1}): {response_text}", flush=True)
             steps_data = extract_json_from_text(response_text)
-
             if not steps_data:
                 raise ValueError("No JSON array found in AI response.")
 
-            # --- SCHEMA VALIDATION ---
-            try:
-                validate(instance=steps_data, schema=TEST_STEP_SCHEMA)
-            except ValidationError as ve:
-                raise ValueError(f"Schema Mismatch: {ve.message}")
+            validate(instance=steps_data, schema=TEST_STEP_SCHEMA)
 
-            # --- DATA TRANSFORMATION ---
             steps = []
             for i, s in enumerate(steps_data):
                 raw_act = str(s.get('action', 'click')).lower().strip()
@@ -117,14 +111,11 @@ async def generate_test_plan(
                     description=s.get('description', f"Step {i+1}")
                 ))
 
-            logger.info(f"✅ Plan generated successfully on attempt {attempts + 1}")
             return TestPlan(intent=raw_input, steps=steps)
 
         except Exception as e:
             attempts += 1
             last_error_feedback = str(e)
-            print(f"⚠️ Retry {attempts}/{max_retries} | Error: {last_error_feedback}")
             continue
 
-    logger.error("❌ Max retries reached. Returning empty test plan.")
     return TestPlan(intent=raw_input, steps=[])

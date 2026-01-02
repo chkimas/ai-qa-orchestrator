@@ -7,6 +7,6 @@ export const metadata: Metadata = {
   robots: 'noindex, nofollow',
 }
 
-export default function SettingsPage() {
+export default function ReconScoutPage() {
   return <CrawlerClient />
 }

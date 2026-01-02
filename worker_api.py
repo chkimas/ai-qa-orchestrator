@@ -1,45 +1,77 @@
-from fastapi import FastAPI, BackgroundTasks, Request
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
 import base64
 import json
 import uvicorn
+import logging
 from main import run_sniper_mode, run_scout_mode
 
-app = FastAPI()
+# Configure Tactical Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("argus-worker")
+
+app = FastAPI(title="Argus Neural Worker", version="1.2.0")
 
 @app.get("/")
 async def health_check():
-    return {"status": "online", "service": "argus-orchestrator"}
+    """System heartbeat for Vercel/Railway health monitoring."""
+    return {
+        "status": "online",
+        "service": "argus-orchestrator",
+        "workload": "idle"
+    }
 
 @app.post("/predict")
 async def trigger_test(request: Request, background_tasks: BackgroundTasks):
+    """
+    MISSION DISPATCH ENDPOINT
+    Receives encrypted base64 payload from Vercel/Next.js and
+    routes it to the appropriate AI agent.
+    """
     try:
         body = await request.json()
+
+        # Transport Layer: Extract the base64 string from the data array
         payload_str = body.get("data", [""])[0]
-        if not payload_str: return {"status": "error", "message": "Empty payload"}
+        if not payload_str:
+            logger.error("Empty payload received.")
+            return {"status": "error", "message": "Empty payload"}
 
-        decoded = json.loads(base64.b64decode(payload_str).decode('utf-8'))
-        mode = decoded.get("mode") # sniper, scout, chaos, or replay
+        # Decoding Layer: Convert transport string back to Mission JSON
+        try:
+            decoded_bytes = base64.b64decode(payload_str)
+            decoded = json.loads(decoded_bytes.decode('utf-8'))
+        except Exception as decode_err:
+            logger.error(f"Failed to decode mission payload: {decode_err}")
+            return {"status": "error", "message": "Malformed mission payload"}
+
+        # Parameter Extraction
+        mode = decoded.get("mode", "sniper") # sniper, scout, chaos, or replay
         run_id = decoded.get("run_id")
+        target_model = decoded.get("model", "llama-3.1-70b-versatile")
 
-        print(f"📦 MISSION DISPATCHED: {run_id} | MODE: {mode}")
+        logger.info(f"🚀 MISSION_RECEIVED: {run_id}")
+        logger.info(f"📡 NEURAL_MODE: {mode.upper()}")
+        logger.info(f"🧠 TARGET_MODEL: {target_model}")
 
-        # --- LOGIC GATE: ROUTE TO CORRECT NEURAL MODULE ---
+        # --- LOGIC GATE: ROUTE TO AGENT MODULES ---
         if mode == "scout":
-            # Direct to the All-Seeing Eye (Crawler)
+            # Deploy the All-Seeing Eye (Crawler)
             background_tasks.add_task(run_scout_mode, decoded)
         else:
-            # Direct to the Sniper (Standard/Chaos/Replay)
-            is_chaos = mode == "chaos"
-            background_tasks.add_task(run_sniper_mode, decoded, is_chaos)
+            # Deploy the Sniper (Standard, Chaos, or Replay)
+            # The 'mode' is passed in so 'run_sniper_mode' can swap prompts
+            background_tasks.add_task(run_sniper_mode, decoded)
 
         return {
             "status": "queued",
             "run_id": run_id,
             "mode": mode,
-            "message": f"Watchman deployed in {mode} mode."
+            "engine": target_model,
+            "message": f"Watchman deployed in {mode} mode using {target_model}."
         }
+
     except Exception as e:
-        print(f"❌ API Trigger Error: {e}")
+        logger.error(f"❌ CRITICAL_SYSTEM_ERROR: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

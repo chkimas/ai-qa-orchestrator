@@ -21,7 +21,7 @@ interface CrawlHistoryItem {
   timestamp: string
 }
 
-export default function ReconScoutPage() {
+export default function CrawlerClient() {
   const { user } = useUser()
   const [url, setUrl] = useState('')
   const [hasKeys, setHasKeys] = useState<boolean | null>(null)
@@ -37,9 +37,11 @@ export default function ReconScoutPage() {
     async function checkSecurity() {
       if (!user) return
       const vault = await getVaultStatus()
-      const anyKey = Object.values(vault).some(v => v === true)
+      const vaultKeys = vault.keys as Record<string, boolean>
+      const anyKey = Object.values(vaultKeys).some(v => v === true)
       setHasKeys(anyKey)
     }
+
     checkSecurity()
     refreshHistory()
   }, [user])

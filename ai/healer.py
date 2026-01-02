@@ -3,32 +3,52 @@ from ai.provider import generate_response
 
 logger = logging.getLogger("orchestrator.healer")
 
-async def heal_selector(page, failed_selector: str, original_intent: str, provider=None, encrypted_key=None):
+async def heal_selector(
+    page,
+    failed_selector: str,
+    original_intent: str,
+    provider=None,
+    model=None,
+    encrypted_key=None
+):
     logger.warning(f"🩹 Healing triggered for: {failed_selector}")
 
     try:
+        # Optimized DOM snapshot focusing only on interactive/text elements
         dom_snapshot = await page.evaluate("""() => {
             const clean = document.body.cloneNode(true);
-            const rubbish = clean.querySelectorAll('script, style, svg, path, noscript');
+            const rubbish = clean.querySelectorAll('script, style, svg, path, noscript, iframe, link');
             rubbish.forEach(el => el.remove());
+            // Filter to keep attributes that matter for testing (id, class, data-*)
             return clean.innerHTML.slice(0, 15000);
         }""")
 
         prompt = f"""
-        I am an automated tester. I failed to find an element.
+        MISSION: SELF-HEALING RECOVERY
+        I am an automated tester. I failed to find an element using the previous selector.
+
         FAILED SELECTOR: "{failed_selector}"
         USER INTENT: "{original_intent}"
-        HTML Snapshot: {dom_snapshot}
+        CURRENT DOM CONTEXT: {dom_snapshot}
 
         TASK:
-        1. Find a robust selector for the intent.
-        2. Briefly explain why the original failed (e.g., 'ID changed' or 'Dynamic class').
+        1. Analyze the DOM to find a robust, Playwright-compatible selector that satisfies the USER INTENT.
+        2. Briefly explain why the original failed (e.g., 'ID changed', 'React re-render', 'Dynamic class').
 
         OUTPUT FORMAT: SELECTOR | REASONING
-        Example: [data-test='login'] | Original placeholder 'User' changed to 'Email/User'
+        Example: [data-testid='login-btn'] | Original ID 'submit' is missing; found matching test-id.
         """
 
-        raw_response = await generate_response(prompt, provider=provider, encrypted_key=encrypted_key)
+        # PASSING THE MODEL: Healing now uses the same neural engine as the Planner
+        raw_response = await generate_response(
+            prompt,
+            provider=provider,
+            model=model,
+            encrypted_key=encrypted_key
+        )
+
+        if not raw_response:
+            return None
 
         if "|" in str(raw_response):
             parts = str(raw_response).split("|")
@@ -38,7 +58,7 @@ async def heal_selector(page, failed_selector: str, original_intent: str, provid
             new_selector = str(raw_response).strip().replace("`", "").replace('"', '').replace("'", "")
             reasoning = "Selector optimized for visual/semantic match."
 
-        logger.info(f"✅ Healed Selector: {new_selector} ({reasoning})")
+        logger.info(f"✅ HEAL_SUCCESS: {new_selector} | LOG: {reasoning}")
         return {"selector": new_selector, "reasoning": reasoning}
 
     except Exception as e:
