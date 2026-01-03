@@ -45,6 +45,7 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Install Playwright Chromium & Dependencies
 # We install it specifically to our custom path to ensure permissions are clean
+RUN pip install playwright==1.49.0
 RUN python3 -m playwright install chromium
 # We don't run install-deps here as we handle them in the apt-get block above
 

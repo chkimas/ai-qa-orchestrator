@@ -25,9 +25,18 @@ class AutomationRunner:
         self._playwright = await async_playwright().start()
         browser = await self._playwright.chromium.launch(
             headless=headless,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ]
         )
-        self.browser_context = await browser.new_context(viewport={"width": 1280, "height": 720})
+        self.browser_context = await browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
         self.page = await self.browser_context.new_page()
 
     async def stop_browser(self):
