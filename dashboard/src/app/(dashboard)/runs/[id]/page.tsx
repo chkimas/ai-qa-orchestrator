@@ -6,6 +6,9 @@ import { Globe, Cpu, Clock, ExternalLink, ChevronRight } from 'lucide-react'
 import PromoteButton from '@/components/PromoteButton'
 import { Metadata } from 'next'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 interface Props {
   params: Promise<{ id: string }>
 }
@@ -30,16 +33,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function RunPage({ params }: { params: { id: string } }) {
+export default async function RunPage({ params }: Props) {
   const { userId } = await auth()
   if (!userId) return null
-
+  const { id } = await params
   const supabase = getSupabaseAdmin()
 
   const { data: run } = await supabase
     .from('test_runs')
     .select('*, execution_logs(*)')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', userId)
     .single()
 
