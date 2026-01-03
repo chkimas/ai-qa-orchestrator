@@ -28,42 +28,50 @@ const MODEL_MAPPING: Record<string, { id: string; label: string; desc: string }[
   ],
   gemini: [
     {
+      id: 'gemini-2.0-flash',
+      label: 'Gemini 2.0 Flash',
+      desc: 'Next-gen speed; nimble multimodal inference.',
+    },
+    {
       id: 'gemini-1.5-pro',
       label: 'Gemini 1.5 Pro',
       desc: 'Long context; steadfast deep reasoning.',
     },
-    {
-      id: 'gemini-1.5-flash',
-      label: 'Gemini 1.5 Flash',
-      desc: 'Low-latency burst; nimble inference.',
-    },
   ],
   groq: [
     {
-      id: 'llama-3.1-70b-versatile',
-      label: 'Llama 3.1 70B',
-      desc: 'Generalist; broad competence at scale.',
+      id: 'llama-3.3-70b-versatile',
+      label: 'Llama 3.3 70B',
+      desc: 'Flagship versatility; broad competence at scale.',
     },
-    { id: 'llama3-8b-8192', label: 'Llama 3 8B', desc: 'Sprinter; 8k context, fast turn.' },
+    {
+      id: 'llama-3.1-8b-instant',
+      label: 'Llama 3.1 8B',
+      desc: 'High-speed sprinter; ultra-low latency.',
+    },
   ],
   anthropic: [
     {
-      id: 'claude-3-5-sonnet-20240620',
+      id: 'claude-3-5-sonnet-latest',
       label: 'Claude 3.5 Sonnet',
       desc: 'Keen for code; high-fidelity reasoning.',
     },
     {
-      id: 'claude-3-haiku-20240307',
-      label: 'Claude 3 Haiku',
-      desc: 'Quick as breath; low-cost inference.',
+      id: 'claude-3-5-haiku-latest',
+      label: 'Claude 3.5 Haiku',
+      desc: 'Fastest Claude; improved intelligence at scale.',
     },
   ],
   sonar: [
-    { id: 'sonar', label: 'Sonar', desc: 'Web-grounded chat; answers with receipts.' },
     {
-      id: 'sonar-reasoning',
-      label: 'Sonar Reasoning',
-      desc: 'Deliberate solver; citation-led inquiry.',
+      id: 'sonar-reasoning-pro',
+      label: 'Sonar Reasoning Pro',
+      desc: 'Deep solver; high-accuracy web grounded research.',
+    },
+    {
+      id: 'sonar',
+      label: 'Sonar',
+      desc: 'Web-grounded chat; nimble answers with citations.',
     },
   ],
 }
