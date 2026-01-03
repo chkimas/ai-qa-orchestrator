@@ -33,8 +33,9 @@ class ElementFingerprint(BaseModel):
     xpath: Optional[str] = None
     location: Dict[str, float] = {"x": 0, "y": 0}
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = {
+        "populate_by_name": True
+    }
 
 class TestStep(BaseModel):
     """
