@@ -46,40 +46,40 @@ async def heal_selector(
             dom_html = dom_html[:50000] + "\n<!-- DOM TRUNCATED -->"
 
         prompt = f"""
-You are an expert UI test healer.
+            You are an expert UI test healer.
 
-A test step failed because the selector could not find the target element.
+            A test step failed because the selector could not find the target element.
 
-Failed selector: {broken_selector}
-Intended action: {intent}
-Current page URL: {page.url}
+            Failed selector: {broken_selector}
+            Intended action: {intent}
+            Current page URL: {page.url}
 
-DOM Snapshot:
-BEGIN_DOM
-{dom_html}
-END_DOM
+            DOM Snapshot:
+            BEGIN_DOM
+            {dom_html}
+            END_DOM
 
-Your task:
-1. Analyze the DOM and identify the correct element for the intended action.
-2. Provide a robust CSS or XPath selector that will reliably target that element.
-3. Prefer semantic selectors (aria-label, data-testid, role) over brittle or positional selectors.
-4. Explain your reasoning briefly.
+            Your task:
+            1. Analyze the DOM and identify the correct element for the intended action.
+            2. Provide a robust CSS or XPath selector that will reliably target that element.
+            3. Prefer semantic selectors (aria-label, data-testid, role) over brittle or positional selectors.
+            4. Explain your reasoning briefly.
 
-Response requirements (MANDATORY):
-- Respond ONLY with valid JSON
-- No markdown
-- No code blocks
-- No commentary
-- No trailing text
-- Use double quotes only
-- Must be parseable by Python json.loads()
+            Response requirements (MANDATORY):
+            - Respond ONLY with valid JSON
+            - No markdown
+            - No code blocks
+            - No commentary
+            - No trailing text
+            - Use double quotes only
+            - Must be parseable by Python json.loads()
 
-Required JSON format:
-{{"selector":"your-robust-selector-here","reasoning":"Brief explanation of why this selector is better"}}
+            Required JSON format:
+            {{"selector":"your-robust-selector-here","reasoning":"Brief explanation of why this selector is better"}}
 
-If no suitable element exists, return:
-{{"selector":"","reasoning":"No suitable element found"}}
-""".strip()
+            If no suitable element exists, return:
+            {{"selector":"","reasoning":"No suitable element found"}}
+            """.strip()
 
         ai = AIProvider(
             provider=provider or "gemini",

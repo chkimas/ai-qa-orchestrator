@@ -12,10 +12,10 @@ from google import genai
 from ai.vault import Vault
 from configs.settings import settings
 
-logger = logging.getLogger("orchestrator.provider")
+logger = logging.getLogger("orchestrator.AIProvider")
 
 
-class Provider:
+class AIProvider:
     """Contract-first AI gateway. Returns valid JSON or an empty string."""
 
     SYSTEM_PROMPT = (
@@ -37,11 +37,11 @@ class Provider:
         api_key = await asyncio.to_thread(Vault.decrypt_key, encrypted_key) if encrypted_key else None
 
         callers: dict[str, Callable[..., str]] = {
-            "openai": Provider._openai,
-            "anthropic": Provider._anthropic,
-            "gemini": Provider._gemini,
-            "groq": Provider._groq,
-            "sonar": Provider._sonar,
+            "openai": AIProvider._openai,
+            "anthropic": AIProvider._anthropic,
+            "gemini": AIProvider._gemini,
+            "groq": AIProvider._groq,
+            "sonar": AIProvider._sonar,
         }
 
         fn = callers.get(provider)
@@ -51,7 +51,7 @@ class Provider:
 
         try:
             raw = await asyncio.to_thread(fn, prompt, api_key, model)
-            return Provider._extract_json(raw)
+            return AIProvider._extract_json(raw)
         except Exception as e:
             logger.exception(f"[{provider}] generation failed: {e}")
             return ""
@@ -87,7 +87,7 @@ class Provider:
         res = client.chat.completions.create(
             model=model or settings.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": Provider.SYSTEM_PROMPT},
+                {"role": "system", "content": AIProvider.SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
@@ -101,7 +101,7 @@ class Provider:
         res = client.messages.create(
             model=model or settings.ANTHROPIC_MODEL,
             max_tokens=4096,
-            system=Provider.SYSTEM_PROMPT,
+            system=AIProvider.SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": "{"},
@@ -119,7 +119,7 @@ class Provider:
             model=f"models/{model_id}",
             contents=prompt,
             config={
-                "system_instruction": Provider.SYSTEM_PROMPT,
+                "system_instruction": AIProvider.SYSTEM_PROMPT,
                 "response_mime_type": "application/json",
                 "temperature": 0.1,
             },
@@ -132,7 +132,7 @@ class Provider:
         res = client.chat.completions.create(
             model=model or settings.GROQ_MODEL,
             messages=[
-                {"role": "system", "content": Provider.SYSTEM_PROMPT},
+                {"role": "system", "content": AIProvider.SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
@@ -149,7 +149,7 @@ class Provider:
         res = client.chat.completions.create(
             model=model or settings.PERPLEXITY_MODEL,
             messages=[
-                {"role": "system", "content": Provider.SYSTEM_PROMPT},
+                {"role": "system", "content": AIProvider.SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,

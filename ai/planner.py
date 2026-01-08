@@ -5,7 +5,7 @@ from typing import Optional, List
 from jsonschema import validate, ValidationError
 from ai.prompts import PLANNER_SYSTEM_PROMPT
 from ai.models import TestPlan, TestStep, ActionType, Role
-from ai.provider import ModelGateway
+from ai.provider import AIProvider
 
 logger = logging.getLogger("orchestrator.planner")
 
@@ -84,7 +84,7 @@ async def generate_test_plan(
                 current_prompt += f"\n\n⚠️ REPAIR INSTRUCTION: Your previous output was invalid:\n{last_error_feedback}\nFix the JSON structure."
 
             # PASSING THE MODEL DOWN TO THE GATEWAY
-            response_text = await ModelGateway.generate_response(
+            response_text = await AIProvider.generate_response(
                 prompt=current_prompt,
                 provider=provider,
                 model=model,

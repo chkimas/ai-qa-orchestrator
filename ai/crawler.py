@@ -6,7 +6,7 @@ from typing import Set, List, Dict, Optional
 from urllib.parse import urlparse, parse_qs, urlencode
 from playwright.async_api import Page
 from ai.prompts import CRAWLER_ANALYSIS_PROMPT
-from ai.provider import generate_response
+from ai.provider import AIProvider
 from data.supabase_client import db_bridge
 
 logger = logging.getLogger("orchestrator.crawler")
@@ -63,7 +63,7 @@ class AutonomousCrawler:
             body_text = await page.evaluate("document.body.innerText.slice(0, 3000)")
             prompt = CRAWLER_ANALYSIS_PROMPT.format(url=url, body_text=body_text)
 
-            resp = await generate_response(prompt)
+            resp = await AIProvider.generate(prompt)
             match = re.search(r"\{.*\}", resp, re.DOTALL)
             if not match:
                 logger.warning(f"⚠️ Analysis result for {url} contained no JSON.")

@@ -1,45 +1,44 @@
-import { getSupabaseAdmin } from '@/lib/supabase'
-import { PostgrestError } from '@supabase/supabase-js'
-import Link from 'next/link'
-import { auth } from '@clerk/nextjs/server'
-import NewRunModal from '@/components/NewRunModal'
-import RiskHeatmap from '@/components/RiskHeatmap'
-import { Trash2, ArrowRight, Globe, ShieldAlert, Cpu } from 'lucide-react'
-import { deleteRun, getRiskHeatmap, hasValidConfig } from '@/lib/actions'
-import { TestRun } from '@/types/database'
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { PostgrestError } from "@supabase/supabase-js";
+import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import NewRunModal from "@/components/NewRunModal";
+import RiskHeatmap from "@/components/RiskHeatmap";
+import { Trash2, ArrowRight, Globe, ShieldAlert, Cpu } from "lucide-react";
+import { deleteRun, getRiskHeatmap, getVaultStatus } from "@/lib/actions";
+import { TestRun } from "@/types/database";
 
 export const metadata = {
-  title: 'Mission Control',
-  description: 'Manage active Neural Watchman nodes and view risk heatmaps.',
-  robots: 'noindex, nofollow',
-}
+  title: "Mission Control",
+  description: "Manage active Neural Watchman nodes and view risk heatmaps.",
+  robots: "noindex, nofollow",
+};
 
 export default async function Home() {
-  const { userId } = await auth()
+  const { userId } = await auth();
 
-  if (!userId) return null // Handled by proxy middleware
+  if (!userId) return null;
 
-  const hasConfig = await hasValidConfig(userId)
-  const supabaseAdmin = getSupabaseAdmin()
+  const vaultStatus = await getVaultStatus();
+  const hasConfig = Object.values(vaultStatus.keys).some((v) => v === true);
 
-  // High-performance fetch for current user missions
+  const supabaseAdmin = getSupabaseAdmin();
   const { data: runs, error } = (await supabaseAdmin
-    .from('test_runs')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })) as {
-    data: TestRun[] | null
-    error: PostgrestError | null
-  }
+    .from("test_runs")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })) as {
+    data: TestRun[] | null;
+    error: PostgrestError | null;
+  };
 
-  if (error) console.error('[ARGUS DB ERROR]:', error.message)
+  if (error) console.error("[ARGUS DB ERROR]:", error.message);
 
-  const runData = runs || []
-  const heatmapData = await getRiskHeatmap()
+  const runData = runs || [];
+  const heatmapData = await getRiskHeatmap();
 
   return (
     <main className="p-8 mx-auto min-h-screen bg-slate-950 text-slate-200 font-sans">
-      {/* Alert for Missing Config */}
       {!hasConfig && (
         <div className="mb-8 p-4 bg-red-950/20 border border-red-500/30 rounded-xl flex justify-between items-center animate-in slide-in-from-top-4">
           <div className="flex items-center gap-3">
@@ -57,7 +56,6 @@ export default async function Home() {
         </div>
       )}
 
-      {/* Header Section */}
       <div className="flex justify-between items-end mb-10 border-b border-slate-900 pb-8">
         <div>
           <div className="flex items-center gap-3 mb-1">
@@ -76,7 +74,6 @@ export default async function Home() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Missions Table */}
         <div className="lg:col-span-3 bg-slate-900/40 rounded-2xl border border-slate-800/60 overflow-hidden h-fit backdrop-blur-sm">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-950/50 border-b border-slate-800">
@@ -97,15 +94,18 @@ export default async function Home() {
             </thead>
             <tbody className="divide-y divide-slate-800/40 font-mono">
               {runData.map((run: TestRun) => (
-                <tr key={run.id} className="hover:bg-blue-500/5 transition-all group">
+                <tr
+                  key={run.id}
+                  className="hover:bg-blue-500/5 transition-all group"
+                >
                   <td className="p-4">
                     <span
                       className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
-                        run.status === 'COMPLETED'
-                          ? 'text-green-400 border-green-500/20 bg-green-500/5'
-                          : run.status === 'FAILED'
-                          ? 'text-red-400 border-red-500/20 bg-red-500/5'
-                          : 'text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse'
+                        run.status === "COMPLETED"
+                          ? "text-green-400 border-green-500/20 bg-green-500/5"
+                          : run.status === "FAILED"
+                          ? "text-red-400 border-red-500/20 bg-red-500/5"
+                          : "text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse"
                       }`}
                     >
                       {run.status}
@@ -125,7 +125,9 @@ export default async function Home() {
                     </div>
                   </td>
                   <td className="p-4 text-center text-[10px] text-slate-500">
-                    {run.created_at ? new Date(run.created_at).toLocaleTimeString() : '---'}
+                    {run.created_at
+                      ? new Date(run.created_at).toLocaleTimeString()
+                      : "---"}
                   </td>
                   <td className="p-4 flex justify-end gap-1">
                     <Link
@@ -136,8 +138,8 @@ export default async function Home() {
                     </Link>
                     <form
                       action={async () => {
-                        'use server'
-                        await deleteRun(run.id)
+                        "use server";
+                        await deleteRun(run.id);
                       }}
                     >
                       <button
@@ -154,11 +156,10 @@ export default async function Home() {
           </table>
         </div>
 
-        {/* Predictive Analytics */}
         <aside className="lg:col-span-1 space-y-6">
           <RiskHeatmap data={heatmapData} />
         </aside>
       </div>
     </main>
-  )
+  );
 }

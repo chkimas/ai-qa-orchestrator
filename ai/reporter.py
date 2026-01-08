@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import List, Dict, Optional
 
-from ai.provider import ModelGateway
+from ai.provider import AIProvider
 from ai.analyzer import RiskAnalyzer
 
 logger = logging.getLogger("orchestrator.reporter")
@@ -133,7 +133,7 @@ class QA_Reporter:
         try:
             logger.info("🤖 Generating AI-driven executive report...")
             
-            report_content = await ModelGateway.generate_response(
+            report_content = await AIProvider.generate(
                 prompt,
                 provider=provider,
                 model=model,
