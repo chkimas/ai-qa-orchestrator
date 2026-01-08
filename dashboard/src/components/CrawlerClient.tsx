@@ -1,150 +1,175 @@
-'use client'
+"use client";
 
-import { useState, useEffect, useRef } from 'react'
-import { runScoutMission, getCrawlHistory, getReportContent, getVaultStatus } from '@/lib/actions'
-import { supabase } from '@/lib/supabase'
-import { useUser } from '@clerk/nextjs'
-import Link from 'next/link'
-import { Lock, Globe, History, Download, ShieldAlert, Radar, Eye } from 'lucide-react'
-
-interface SupabaseLogPayload {
-  action: string
-  status: string
-  description?: string
-  details?: string
-  message?: string
-}
+import { useState, useEffect, useRef } from "react";
+import {
+  runScoutMission,
+  getCrawlHistory,
+  getReportContent,
+  getVaultStatus,
+} from "@/lib/actions";
+import { supabase } from "@/lib/supabase";
+import { useUser } from "@clerk/nextjs";
+import Link from "next/link";
+import {
+  Lock,
+  Globe,
+  History,
+  Download,
+  ShieldAlert,
+  Radar,
+  Eye,
+} from "lucide-react";
+import type { ExecutionLog } from "@/types/database";
 
 interface CrawlHistoryItem {
-  id: string
-  url: string
-  timestamp: string
+  id: string;
+  url: string;
+  timestamp: string;
 }
 
 export default function CrawlerClient() {
-  const { user } = useUser()
-  const [url, setUrl] = useState('')
-  const [hasKeys, setHasKeys] = useState<boolean | null>(null)
-  const [status, setStatus] = useState<'idle' | 'running' | 'complete'>('idle')
-  const [runId, setRunId] = useState<string | null>(null)
-  const [logs, setLogs] = useState<string>('')
-  const [history, setHistory] = useState<CrawlHistoryItem[]>([])
-  const terminalRef = useRef<HTMLDivElement>(null)
-  const hasCheckedRef = useRef(false)
-  const [isChecking, setIsChecking] = useState(true)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+  const { user } = useUser();
+  const [url, setUrl] = useState("");
+  const [hasKeys, setHasKeys] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<"idle" | "running" | "complete">("idle");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string>("");
+  const [history, setHistory] = useState<CrawlHistoryItem[]>([]);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const hasCheckedRef = useRef(false);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     async function initReconNode() {
-      if (!user || hasCheckedRef.current) return
+      if (!user || hasCheckedRef.current) return;
+      hasCheckedRef.current = true;
 
       try {
-        const [vault, res] = await Promise.all([getVaultStatus(), getCrawlHistory()])
-        const vaultKeys = vault.keys as Record<string, boolean>
-        const anyKey = Object.values(vaultKeys).some(v => v === true)
-        setHasKeys(anyKey)
+        const [vault, res] = await Promise.all([
+          getVaultStatus(),
+          getCrawlHistory(),
+        ]);
+        const vaultKeys = vault.keys as Record<string, boolean>;
+        const anyKey = Object.values(vaultKeys).some((v) => v === true);
+        setHasKeys(anyKey);
 
         if (res.success && res.history) {
-          setHistory(res.history as CrawlHistoryItem[])
+          setHistory(res.history as CrawlHistoryItem[]);
         }
-        hasCheckedRef.current = true
       } catch (err) {
-        console.error('Uplink handshake failed:', err)
-      } finally {
-        setIsChecking(false)
+        console.error("Uplink handshake failed:", err);
       }
     }
-    initReconNode()
-  }, [user])
+    initReconNode();
+  }, [user]);
 
   const handleDeploy = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (status === 'running' || !hasKeys || !url) return
+    if (e) e.preventDefault();
+    if (status === "running" || !hasKeys || !url) return;
 
-    setLogs('📡 ESTABLISHING UPLINK TO REMOTE NODE...\n')
-    setStatus('running')
+    setLogs("📡 ESTABLISHING UPLINK TO REMOTE NODE...\n");
+    setStatus("running");
 
     try {
-      const result = await runScoutMission(url)
+      const result = await runScoutMission(url, username, password);
       if (result.success && result.runId) {
-        setRunId(result.runId)
+        setRunId(result.runId);
       } else {
-        throw new Error(result.message || 'Uplink Refused')
+        throw new Error(result.message || "Uplink Refused");
       }
-    } catch (err: unknown) {
-      setStatus('idle')
-      const msg = err instanceof Error ? err.message : 'Unknown Error'
-      setLogs(prev => prev + `❌ CRITICAL_FAILURE: ${msg}\n`)
+    } catch (err) {
+      setStatus("idle");
+      const msg = err instanceof Error ? err.message : "Unknown Error";
+      setLogs((prev) => prev + `❌ CRITICAL_FAILURE: ${msg}\n`);
     }
-  }
+  };
 
   const handleDownload = async () => {
-    if (!runId) return
-    const res = await getReportContent(runId)
+    if (!runId) return;
+    const res = await getReportContent(runId);
     if (res && res.execution_logs) {
       const content =
         `# ARGUS RECON REPORT: ${res.url}\nID: ${res.id}\n\n` +
-        res.execution_logs.map(l => `[${l.status}] ${l.action}: ${l.message}`).join('\n')
-      const blob = new Blob([content], { type: 'text/markdown' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = `ARGUS_RECON_${runId.slice(0, 8)}.md`
-      link.click()
+        res.execution_logs
+          .map((l) => `[${l.status}] ${l.action}: ${l.message}`)
+          .join("\n");
+      const blob = new Blob([content], { type: "text/markdown" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `ARGUS_RECON_${runId.slice(0, 8)}.md`;
+      link.click();
     }
-  }
+  };
 
-  // Real-time Telemetry Subscription
   useEffect(() => {
-    if (!runId || status !== 'running') return
+    if (!runId || status !== "running") return;
+
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
 
     const channel = supabase
       .channel(`recon-${runId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'execution_logs',
+          event: "INSERT",
+          schema: "public",
+          table: "execution_logs",
           filter: `run_id=eq.${runId}`,
         },
-        payload => {
-          const newLog = payload.new as SupabaseLogPayload
-          const time = new Date().toLocaleTimeString([], { hour12: false })
-          const logLine = `[${time}] ${newLog.action.toUpperCase()} > ${
-            newLog.description || newLog.message || newLog.details
-          }\n`
-          setLogs(prev => prev + logLine)
+        (payload) => {
+          const newLog = payload.new as ExecutionLog;
 
-          if (newLog.status === 'COMPLETED' || newLog.status === 'FAILED') {
-            setStatus('complete')
+          const time = new Date().toLocaleTimeString([], { hour12: false });
+          const logLine = `[${time}] ${
+            newLog.action?.toUpperCase() || "ACTION"
+          } > ${newLog.message || newLog.details || "Action Initialized"}\n`;
+
+          setLogs((prev) => prev + logLine);
+
+          if (newLog.status === "COMPLETED" || newLog.status === "FAILED") {
+            setStatus("complete");
+            setTimeout(() => {
+              if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+              }
+            }, 500);
           }
         }
       )
-      .subscribe()
+      .subscribe();
+
+    channelRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [runId, status])
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [runId, status]);
 
-  // Auto-scroll terminal
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [logs])
+  }, [logs]);
 
   return (
     <div className="h-screen bg-black text-slate-300 flex flex-col font-mono selection:bg-blue-500/30">
-      {/* Tactical Top Bar */}
       <div className="h-14 border-b border-slate-800 bg-slate-950 flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-4">
           <div className="p-2 bg-blue-600/10 border border-blue-500/20 rounded">
             <Radar className="h-4 w-4 text-blue-500 animate-pulse" />
           </div>
           <div>
-            <h1 className="text-sm font-black text-white tracking-widest uppercase">RECON_SCOUT</h1>
+            <h1 className="text-sm font-black text-white tracking-widest uppercase">
+              RECON_SCOUT
+            </h1>
             <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter italic">
               Autonomous Site Discovery Protocol
             </p>
@@ -155,21 +180,21 @@ export default function CrawlerClient() {
           <div className="px-3 py-1 border border-slate-800 bg-black rounded flex items-center gap-2 text-[10px] font-black">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
-                status === 'running'
-                  ? 'bg-green-500 animate-pulse'
-                  : status === 'complete'
-                  ? 'bg-blue-500'
-                  : 'bg-slate-700'
+                status === "running"
+                  ? "bg-green-500 animate-pulse"
+                  : status === "complete"
+                  ? "bg-blue-500"
+                  : "bg-slate-700"
               }`}
             />
             {status.toUpperCase()}
           </div>
-          {status === 'complete' ? (
+          {status === "complete" ? (
             <button
               onClick={() => {
-                setStatus('idle')
-                setLogs('')
-                setRunId(null)
+                setStatus("idle");
+                setLogs("");
+                setRunId(null);
               }}
               className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black uppercase rounded transition-all"
             >
@@ -178,7 +203,7 @@ export default function CrawlerClient() {
           ) : (
             <button
               onClick={() => handleDeploy()}
-              disabled={status === 'running' || !hasKeys}
+              disabled={status === "running" || !hasKeys}
               className="px-6 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-20 text-white text-[10px] font-black uppercase rounded transition-all shadow-lg shadow-blue-600/20"
             >
               Deploy_Agent
@@ -188,12 +213,12 @@ export default function CrawlerClient() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Side: Parameters */}
         <aside className="w-80 border-r border-slate-800 bg-slate-950 flex flex-col p-6 space-y-8 overflow-y-auto">
-          {isChecking ? (
+          {hasKeys === null ? (
             <div className="p-4 border border-slate-800 rounded-lg animate-pulse">
               <div className="flex items-center gap-2 text-slate-700 font-black text-[10px] uppercase">
-                <Radar size={14} className="animate-spin" /> Verifying_Credentials...
+                <Radar size={14} className="animate-spin" />{" "}
+                Verifying_Credentials...
               </div>
             </div>
           ) : !hasKeys ? (
@@ -225,8 +250,8 @@ export default function CrawlerClient() {
             </label>
             <input
               value={url}
-              onChange={e => setUrl(e.target.value)}
-              disabled={status === 'running'}
+              onChange={(e) => setUrl(e.target.value)}
+              disabled={status === "running"}
               placeholder="https://example.com"
               className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
             />
@@ -234,32 +259,28 @@ export default function CrawlerClient() {
 
           <section className="space-y-3 pt-4 border-t border-slate-900">
             <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-              <Lock size={12} /> Auth_Overide (Optional)
+              <Lock size={12} /> Auth_Override (Optional)
             </label>
             <div className="space-y-2">
-              <div className="relative">
-                <input
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  disabled={status === 'running'}
-                  placeholder="Identifier / User"
-                  className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  disabled={status === 'running'}
-                  placeholder="Credential / Pass"
-                  className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={status === "running"}
+                placeholder="Identifier / User"
+                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={status === "running"}
+                placeholder="Credential / Pass"
+                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
+              />
             </div>
             <p className="text-[9px] text-slate-700 italic leading-tight">
-              If provided, Argus will attempt to bypass entry gates using these credentials during
-              the crawl.
+              If provided, Argus will attempt to bypass entry gates using these
+              credentials during the crawl.
             </p>
           </section>
 
@@ -269,25 +290,29 @@ export default function CrawlerClient() {
             </label>
             <div className="space-y-2">
               {history.length > 0 ? (
-                history.map(item => (
+                history.map((item) => (
                   <div
                     key={item.id}
                     className="p-2 border border-slate-900 bg-slate-900/20 rounded group hover:border-slate-700 transition-all"
                   >
-                    <p className="text-[10px] text-slate-400 truncate font-bold">{item.url}</p>
+                    <p className="text-[10px] text-slate-400 truncate font-bold">
+                      {item.url}
+                    </p>
                     <p className="text-[8px] text-slate-600 mt-1">
-                      {new Date(item.timestamp).toLocaleDateString()} {'//'} {item.id.slice(0, 8)}
+                      {new Date(item.timestamp).toLocaleDateString()} {"//"}{" "}
+                      {item.id.slice(0, 8)}
                     </p>
                   </div>
                 ))
               ) : (
-                <div className="text-[10px] text-slate-700 italic">No previous logs...</div>
+                <div className="text-[10px] text-slate-700 italic">
+                  No previous logs...
+                </div>
               )}
             </div>
           </section>
         </aside>
 
-        {/* Right Side: Live Terminal */}
         <section className="flex-1 bg-black flex flex-col relative">
           <div className="absolute inset-0 pointer-events-none border-20 border-transparent shadow-[inset_0_0_100px_rgba(0,0,0,0.5)] z-10" />
 
@@ -311,16 +336,17 @@ export default function CrawlerClient() {
             ) : (
               <div className="h-full flex flex-col items-center justify-center opacity-20">
                 <Eye size={48} className="mb-4" />
-                <p className="text-[10px] font-black uppercase tracking-[0.5em]">Awaiting_Input</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.5em]">
+                  Awaiting_Input
+                </p>
               </div>
             )}
-            {status === 'running' && (
+            {status === "running" && (
               <span className="inline-block w-2 h-4 bg-blue-500 align-middle ml-1 animate-pulse" />
             )}
           </div>
 
-          {/* Terminal Footer Actions */}
-          {status === 'complete' && (
+          {status === "complete" && (
             <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end animate-in fade-in slide-in-from-bottom-2">
               <button
                 onClick={handleDownload}
@@ -333,7 +359,6 @@ export default function CrawlerClient() {
         </section>
       </div>
 
-      {/* System Status Bar */}
       <footer className="h-8 bg-slate-950 border-t border-slate-900 px-6 flex items-center justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest shrink-0">
         <div className="flex items-center gap-6">
           <span>
@@ -346,5 +371,5 @@ export default function CrawlerClient() {
         <span>v1.2.0-STABLE</span>
       </footer>
     </div>
-  )
+  );
 }

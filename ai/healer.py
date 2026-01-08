@@ -1,66 +1,120 @@
+import json
 import logging
-from ai.provider import generate_response
+import re
+from typing import Dict, Optional
+
+from playwright.async_api import Page
+from ai.provider import AIProvider
 
 logger = logging.getLogger("orchestrator.healer")
 
-async def heal_selector(
-    page,
-    failed_selector: str,
-    original_intent: str,
-    provider=None,
-    model=None,
-    encrypted_key=None
-):
-    logger.warning(f"🩹 Healing triggered for: {failed_selector}")
+
+def extract_json_object(text: str) -> Optional[Dict[str, str]]:
+    """
+    Extract the first valid JSON object from a string.
+    Handles extra text, markdown, and partial formatting.
+    """
+    match = re.search(r"\{(?:[^{}]|(?R))*\}", text, re.DOTALL)
+    if not match:
+        return None
 
     try:
-        # Optimized DOM snapshot focusing only on interactive/text elements
-        dom_snapshot = await page.evaluate("""() => {
-            const clean = document.body.cloneNode(true);
-            const rubbish = clean.querySelectorAll('script, style, svg, path, noscript, iframe, link');
-            rubbish.forEach(el => el.remove());
-            // Filter to keep attributes that matter for testing (id, class, data-*)
-            return clean.innerHTML.slice(0, 15000);
-        }""")
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+
+
+async def heal_selector(
+    page: Page,
+    broken_selector: str,
+    intent: str,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    encrypted_key: Optional[str] = None,
+) -> Optional[Dict[str, str]]:
+    """
+    Self-healing mechanism:
+    1. Capture current DOM snapshot
+    2. Send intent + broken selector + DOM to AI
+    3. AI returns corrected selector with reasoning
+    """
+
+    try:
+        dom_html = await page.content()
+
+        if len(dom_html) > 50000:
+            dom_html = dom_html[:50000] + "\n<!-- DOM TRUNCATED -->"
 
         prompt = f"""
-        MISSION: SELF-HEALING RECOVERY
-        I am an automated tester. I failed to find an element using the previous selector.
+You are an expert UI test healer.
 
-        FAILED SELECTOR: "{failed_selector}"
-        USER INTENT: "{original_intent}"
-        CURRENT DOM CONTEXT: {dom_snapshot}
+A test step failed because the selector could not find the target element.
 
-        TASK:
-        1. Analyze the DOM to find a robust, Playwright-compatible selector that satisfies the USER INTENT.
-        2. Briefly explain why the original failed (e.g., 'ID changed', 'React re-render', 'Dynamic class').
+Failed selector: {broken_selector}
+Intended action: {intent}
+Current page URL: {page.url}
 
-        OUTPUT FORMAT: SELECTOR | REASONING
-        Example: [data-testid='login-btn'] | Original ID 'submit' is missing; found matching test-id.
-        """
+DOM Snapshot:
+BEGIN_DOM
+{dom_html}
+END_DOM
 
-        # PASSING THE MODEL: Healing now uses the same neural engine as the Planner
-        raw_response = await generate_response(
-            prompt,
-            provider=provider,
+Your task:
+1. Analyze the DOM and identify the correct element for the intended action.
+2. Provide a robust CSS or XPath selector that will reliably target that element.
+3. Prefer semantic selectors (aria-label, data-testid, role) over brittle or positional selectors.
+4. Explain your reasoning briefly.
+
+Response requirements (MANDATORY):
+- Respond ONLY with valid JSON
+- No markdown
+- No code blocks
+- No commentary
+- No trailing text
+- Use double quotes only
+- Must be parseable by Python json.loads()
+
+Required JSON format:
+{{"selector":"your-robust-selector-here","reasoning":"Brief explanation of why this selector is better"}}
+
+If no suitable element exists, return:
+{{"selector":"","reasoning":"No suitable element found"}}
+""".strip()
+
+        ai = AIProvider(
+            provider=provider or "gemini",
             model=model,
-            encrypted_key=encrypted_key
+            api_key=encrypted_key,
         )
 
-        if not raw_response:
+        response = await ai.generate(prompt)
+
+        if not response:
+            logger.error("Healer received empty response from AI")
             return None
 
-        if "|" in str(raw_response):
-            parts = str(raw_response).split("|")
-            new_selector = parts[0].strip().replace("`", "").replace('"', '').replace("'", "")
-            reasoning = parts[1].strip()
-        else:
-            new_selector = str(raw_response).strip().replace("`", "").replace('"', '').replace("'", "")
-            reasoning = "Selector optimized for visual/semantic match."
+        logger.debug(f"Raw AI response:\n{response}")
 
-        logger.info(f"✅ HEAL_SUCCESS: {new_selector} | LOG: {reasoning}")
-        return {"selector": new_selector, "reasoning": reasoning}
+        result = extract_json_object(response)
+
+        if not isinstance(result, dict):
+            logger.error(f"Healer AI returned invalid JSON\nResponse:\n{response}")
+            return None
+
+        selector = result.get("selector")
+        reasoning = result.get("reasoning", "AI-optimized selector")
+
+        if not selector:
+            logger.error("Healer AI did not provide a selector")
+            return None
+
+        logger.info(f"🩹 HEAL_SUCCESS: {reasoning} → {selector}")
+
+        return {
+            "selector": str(selector),
+            "reasoning": str(reasoning),
+        }
 
     except Exception as e:
-        logger.error(f"❌ Healing failed: {e}")
+        logger.error(f"Healer crashed: {e}", exc_info=True)
         return None

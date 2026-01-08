@@ -1,50 +1,73 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import StepCard from './StepCard'
-import type { Database } from '@/lib/supabase'
-import { Terminal } from 'lucide-react'
+import { useEffect, useState, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import StepCard from "./StepCard";
+import type { Database } from "@/lib/supabase";
+import { Terminal } from "lucide-react";
 
-type ExecutionLog = Database['public']['Tables']['execution_logs']['Row']
+type ExecutionLog = Database["public"]["Tables"]["execution_logs"]["Row"];
 
 interface LiveLogViewerProps {
-  runId: string
-  initialLogs: ExecutionLog[]
+  runId: string;
+  initialLogs: ExecutionLog[];
 }
 
-export default function LiveLogViewer({ runId, initialLogs = [] }: LiveLogViewerProps) {
-  const [logs, setLogs] = useState<ExecutionLog[]>(initialLogs)
+export default function LiveLogViewer({
+  runId,
+  initialLogs = [],
+}: LiveLogViewerProps) {
+  const [logs, setLogs] = useState<ExecutionLog[]>(initialLogs);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
-    if (!runId) return
+    if (!runId) return;
+
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
 
     const channel = supabase
       .channel(`live-trace-${runId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'execution_logs',
+          event: "INSERT",
+          schema: "public",
+          table: "execution_logs",
           filter: `run_id=eq.${runId}`,
         },
-        payload => {
-          const newLog = payload.new as ExecutionLog
-          if (newLog) {
-            setLogs(prev => {
-              const updated = [...prev, newLog]
-              return updated.slice(-100)
-            })
-          }
+        (payload) => {
+          if (!payload.new) return;
+
+          const newLog = payload.new as ExecutionLog;
+
+          setLogs((prev) => {
+            if (newLog.status === "COMPLETED" || newLog.status === "FAILED") {
+              setTimeout(() => {
+                if (channelRef.current) {
+                  supabase.removeChannel(channelRef.current);
+                  channelRef.current = null;
+                }
+              }, 1000);
+            }
+
+            const updated = [...prev, newLog];
+            return updated.slice(-100);
+          });
         }
       )
-      .subscribe()
+      .subscribe();
+
+    channelRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [runId])
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [runId]);
 
   if (logs.length === 0) {
     return (
@@ -54,12 +77,11 @@ export default function LiveLogViewer({ runId, initialLogs = [] }: LiveLogViewer
           <span>Awaiting Uplink...</span>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="relative space-y-6 pb-20">
-      {/* Decorative vertical line connecting steps */}
       <div className="absolute left-5.25 top-4 bottom-4 w-px bg-slate-800" />
 
       {logs.map((log, index) => (
@@ -70,12 +92,11 @@ export default function LiveLogViewer({ runId, initialLogs = [] }: LiveLogViewer
         >
           <StepCard
             step={{
-              ...log,
               step_id: log.step_id ?? 0,
-              role: log.role ?? 'system',
-              action: log.action ?? 'LOG',
-              status: log.status ?? 'INFO',
-              message: log.message ?? '',
+              role: log.role ?? "system",
+              action: log.action ?? "LOG",
+              status: log.status ?? "INFO",
+              message: log.message ?? "",
               created_at: log.created_at ?? new Date().toISOString(),
               selector: log.selector ?? undefined,
               value: log.value ?? undefined,
@@ -85,5 +106,5 @@ export default function LiveLogViewer({ runId, initialLogs = [] }: LiveLogViewer
         </div>
       ))}
     </div>
-  )
+  );
 }

@@ -39,13 +39,15 @@ class AutonomousCrawler:
         if not self.credentials or self.is_logged_in:
             return False
         try:
-            # Anchor to the password field
-            if await page.locator("input[type='password']").count() == 0:
+            # Anchor to the password field using a more robust check
+            pw_field = page.locator("input[type='password'], input[name*='pass'], input[id*='pass']")
+            if await pw_field.count() == 0:
                 return False
 
-            # Generic selectors for the 'Smart' Crawler
-            await page.fill("input[name*='user'], input[id*='user'], [placeholder*='User'], [placeholder*='Email']", self.credentials['username'])
-            await page.fill("input[type='password']", self.credentials['password'])
+            # Use the credentials from your Injection Data
+            user_selector = "input[name*='user'], input[id*='user'], input[name*='email'], [placeholder*='Email']"
+            await page.fill(user_selector, self.credentials['username'])
+            await pw_field.fill(self.credentials['password'])
 
             await page.keyboard.press("Enter")
             await page.wait_for_load_state("networkidle")
@@ -58,15 +60,10 @@ class AutonomousCrawler:
     async def _analyze_page(self, page: Page, url: str):
         """AI-driven page classification and stability logging."""
         try:
-            # Capture more content for better AI analysis
             body_text = await page.evaluate("document.body.innerText.slice(0, 3000)")
-
-            # Format the prompt using the CRAWLER_ANALYSIS_PROMPT from prompts.py
             prompt = CRAWLER_ANALYSIS_PROMPT.format(url=url, body_text=body_text)
 
             resp = await generate_response(prompt)
-
-            # Use regex to find the JSON in case the AI added any prose
             match = re.search(r"\{.*\}", resp, re.DOTALL)
             if not match:
                 logger.warning(f"⚠️ Analysis result for {url} contained no JSON.")
@@ -89,6 +86,7 @@ class AutonomousCrawler:
             # LOG TO SUPABASE: Feeds the Risk Heatmap
             db_bridge.log_step(
                 run_id=self.run_id,
+                step_index=len(self.report_data),
                 role="crawler",
                 action="analysis",
                 status="PASSED" if data.get("status") == "OK" else "FAILED",
