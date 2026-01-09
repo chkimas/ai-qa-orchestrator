@@ -98,7 +98,7 @@ export default function NewRunModal() {
   const [selectedProvider, setSelectedProvider] =
     useState<AIProvider>("gemini");
   const [hasAnyKey, setHasAnyKey] = useState<boolean>(true);
-  const [isChaos, setIsChaos] = useState(false); // NEW: Chaos State
+  const [isChaos, setIsChaos] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const PROVIDERS: { id: AIProvider; name: string }[] = [
@@ -168,8 +168,8 @@ export default function NewRunModal() {
 
       {isOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <header className="bg-slate-950 p-5 border-b border-slate-800 flex justify-between items-center">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <header className="bg-slate-950 p-5 border-b border-slate-800 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-lg bg-blue-600/20 flex items-center justify-center border border-blue-500/30">
                   <Cpu className="text-blue-500" size={20} />
@@ -191,9 +191,13 @@ export default function NewRunModal() {
               </button>
             </header>
 
-            <form action={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2">
-                <div className="p-6 border-r border-slate-800 space-y-6">
+            <form
+              action={handleSubmit}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 flex-1 overflow-hidden">
+                {/* Left Column - Scrollable */}
+                <div className="p-6 border-r border-slate-800 space-y-6 overflow-y-auto">
                   {/* Neural Engine Selection */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -244,7 +248,7 @@ export default function NewRunModal() {
                     </div>
                   </div>
 
-                  {/* Model Configuration Dropdown */}
+                  {/* Model Configuration */}
                   <div className="space-y-2.5">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                       <Cpu size={12} className="text-blue-500" /> Model
@@ -284,6 +288,7 @@ export default function NewRunModal() {
                     </div>
                   </div>
 
+                  {/* Target URL */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                       <Info size={12} /> Target URL
@@ -310,7 +315,7 @@ export default function NewRunModal() {
                   )}
                 </div>
 
-                <div className="p-6 bg-slate-950/30 space-y-6">
+                <div className="p-6 bg-slate-950/30 space-y-6 overflow-y-auto">
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -319,108 +324,53 @@ export default function NewRunModal() {
                       <button
                         type="button"
                         onClick={() => setShowGuide(!showGuide)}
-                        className="text-[9px] text-blue-500 hover:text-blue-400 font-bold uppercase border border-blue-500/20 px-2 py-0.5 rounded"
+                        className="text-[9px] text-blue-500 hover:text-blue-400 font-bold uppercase border border-blue-500/20 px-2 py-0.5 rounded flex items-center gap-1 transition-colors"
                       >
-                        {showGuide ? "Close Guide" : "AI Guide"}
+                        <BookOpen size={10} />
+                        {showGuide ? "Hide" : "Guide"}
                       </button>
                     </div>
-                    {showGuide && (
-                      <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-5 mb-4 animate-in slide-in-from-top-2 duration-300 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
-                        <div className="flex items-center gap-2 mb-4 border-b border-blue-500/20 pb-2">
-                          <BookOpen size={14} className="text-blue-400" />
-                          <span className="text-xs font-black text-blue-400 uppercase tracking-[0.2em]">
-                            Neural_Orchestration_Manual_v1.1
-                          </span>
-                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-3">
-                            <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
-                              01. Intent Structure
+                    {/* Compact Collapsible Guide */}
+                    {showGuide && (
+                      <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-3 animate-in slide-in-from-top-2 duration-200 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
+                        <div className="space-y-3">
+                          <div>
+                            <h4 className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                              <span className="w-1 h-1 rounded-full bg-blue-500" />
+                              Intent Structure
                             </h4>
-                            <p className="text-[11px] text-slate-400 leading-relaxed">
-                              Argus decomposes natural language into{" "}
-                              <span className="text-blue-400 font-mono">
-                                Atomic Steps
+                            <p className="text-[9px] text-slate-400 leading-relaxed mb-1.5">
+                              Use explicit verbs:{" "}
+                              <span className="text-blue-400 font-mono text-[8px]">
+                                Navigate, Click, Input, Verify
                               </span>
-                              . Use explicit action verbs for 100% sniper
-                              accuracy.
                             </p>
-                            <div className="bg-blue-500/5 border border-blue-500/10 p-2 rounded font-mono text-[10px] leading-relaxed">
-                              <span className="text-blue-500 italic">
-                                {"//"} Recommended Format:
-                              </span>
-                              <br />
+                            <div className="bg-blue-500/5 border border-blue-500/10 p-1.5 rounded font-mono text-[8px] leading-relaxed text-slate-400">
                               &quot;
                               <span className="text-blue-400">Navigate</span> to
                               google.com,{" "}
                               <span className="text-blue-400">type</span>{" "}
-                              &apos;Argus AI&apos; into the search bar, then{" "}
+                              &apos;AI&apos;,{" "}
                               <span className="text-blue-400">click</span>{" "}
                               search.&quot;
                             </div>
                           </div>
 
-                          <div className="space-y-2">
-                            <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
-                              02. Action Vocabulary
-                            </h4>
-                            <div className="space-y-1.5">
-                              {[
-                                {
-                                  cmd: "NAVIGATE",
-                                  desc: "Initialize browser at specific URL.",
-                                },
-                                {
-                                  cmd: "CLICK",
-                                  desc: "Semantic targeting of buttons/links.",
-                                },
-                                {
-                                  cmd: "INPUT",
-                                  desc: "Inject values into forms or fields.",
-                                },
-                                {
-                                  cmd: "VERIFY",
-                                  desc: "Neural check for on-screen text.",
-                                },
-                                {
-                                  cmd: "EXTRACT",
-                                  desc: "Scrape UI data into mission logs.",
-                                },
-                              ].map((item) => (
-                                <div
-                                  key={item.cmd}
-                                  className="flex items-center gap-2 group"
-                                >
-                                  <span className="text-[9px] font-mono bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/10 group-hover:border-blue-500/40 transition-colors">
-                                    {item.cmd}
-                                  </span>
-                                  <span className="text-[10px] text-slate-500">
-                                    {item.desc}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                          <div className="pt-2 border-t border-slate-900 flex items-center gap-2 text-[8px] text-slate-600">
+                            <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+                            Self-Healing Active (Healer-v2)
                           </div>
-                        </div>
-
-                        <div className="mt-4 pt-3 border-t border-slate-900 flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-[9px] text-slate-500 italic">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                            Self-Healing Engine (Healer-v2) is active
-                          </div>
-                          <span className="text-[9px] font-mono text-slate-600 tracking-tighter">
-                            SYS_REF: ARGUS_ORCH_STABLE_2026
-                          </span>
                         </div>
                       </div>
                     )}
+
                     <textarea
                       name="intent"
-                      rows={5}
+                      rows={showGuide ? 4 : 6}
                       required
                       placeholder="e.g., '1. Navigate to /login', '2. Input {{user}}'..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono resize-none"
                     />
                   </div>
 
@@ -432,17 +382,19 @@ export default function NewRunModal() {
                       name="test_data"
                       rows={4}
                       placeholder='{ "user": "admin" }'
-                      className="w-full bg-black border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-[11px] outline-none"
+                      className="w-full bg-black border border-slate-800 rounded-lg p-3 text-yellow-500 font-mono text-[11px] outline-none resize-none"
                     />
                   </div>
                 </div>
               </div>
 
-              <footer className="p-5 bg-slate-950 border-t border-slate-800 flex justify-between items-center">
+              <footer className="p-5 bg-slate-950 border-t border-slate-800 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-6">
-                  {/* CHAOS PROTOCOL TOGGLE */}
-                  <div className="flex items-center gap-3 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 group hover:border-red-500/30 transition-colors">
-                    <div className="relative inline-flex items-center cursor-pointer">
+                  <label
+                    htmlFor="is_chaos"
+                    className="flex items-center gap-3 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 group hover:border-red-500/30 transition-colors cursor-pointer"
+                  >
+                    <div className="relative inline-flex items-center">
                       <input
                         type="checkbox"
                         name="is_chaos"
@@ -453,14 +405,13 @@ export default function NewRunModal() {
                       />
                       <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:bg-red-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 transition-colors"></div>
                     </div>
-                    <label
-                      htmlFor="is_chaos"
-                      className={`text-[9px] font-black uppercase tracking-[0.15em] cursor-pointer transition-colors ${
+                    <span
+                      className={`text-[9px] font-black uppercase tracking-[0.15em] transition-colors ${
                         isChaos ? "text-red-500" : "text-slate-500"
                       }`}
                     >
                       {isChaos ? "Chaos_Active" : "Chaos_Protocol"}
-                    </label>
+                    </span>
                     <Zap
                       size={10}
                       className={`${
@@ -469,7 +420,7 @@ export default function NewRunModal() {
                           : "text-slate-700"
                       }`}
                     />
-                  </div>
+                  </label>
 
                   <p className="text-[9px] text-slate-600 font-mono uppercase tracking-widest flex items-center gap-2">
                     <ShieldCheck size={12} /> Status: Ready

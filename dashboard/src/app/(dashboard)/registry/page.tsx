@@ -1,30 +1,31 @@
-import { getSupabaseAdmin } from '@/lib/supabase'
-import { auth } from '@clerk/nextjs/server'
-import { Archive, ShieldCheck, Trash2, Globe } from 'lucide-react'
-import Link from 'next/link'
-import { Database } from '@/lib/supabase'
-import { Metadata } from 'next'
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { auth } from "@clerk/nextjs/server";
+import { Archive, ShieldCheck, Trash2, Globe, Play } from "lucide-react";
+import Link from "next/link";
+import { Database } from "@/lib/supabase";
+import { Metadata } from "next";
+import { deleteSavedTest, runSavedTest } from "@/lib/actions";
 
-type SavedTest = Database['public']['Tables']['saved_tests']['Row']
+type SavedTest = Database["public"]["Tables"]["saved_tests"]["Row"];
 
 export const metadata: Metadata = {
-  title: 'Neural Registry',
-  description: 'Access the Golden Path repository for regression testing.',
-  robots: 'noindex, nofollow',
-}
+  title: "Neural Registry",
+  description: "Access the Golden Path repository for regression testing.",
+  robots: "noindex, nofollow",
+};
 
 export default async function GoldenLibraryPage() {
-  const { userId } = await auth()
-  if (!userId) return null
+  const { userId } = await auth();
+  if (!userId) return null;
 
-  const supabase = getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
   const { data } = await supabase
-    .from('saved_tests')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
+    .from("saved_tests")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
 
-  const registry = (data || []) as SavedTest[]
+  const registry = (data || []) as SavedTest[];
 
   return (
     <main className="p-8 mx-auto min-h-screen bg-slate-950 text-slate-200">
@@ -48,25 +49,29 @@ export default async function GoldenLibraryPage() {
         {registry.length === 0 ? (
           <div className="col-span-full py-20 border border-dashed border-slate-800 rounded-3xl flex flex-col items-center justify-center opacity-20">
             <Archive size={48} className="mb-4" />
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em]">Registry_Empty</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em]">
+              Registry_Empty
+            </p>
           </div>
         ) : (
-          registry.map(item => (
+          registry.map((item) => (
             <div
               key={item.id}
               className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/30 transition-all group relative"
             >
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase tracking-tighter">
-                  <ShieldCheck size={14} /> {item.name || 'UNNAMED_TEST'}
+                  <ShieldCheck size={14} /> {item.name || "UNNAMED_TEST"}
                 </div>
                 <span className="text-[9px] font-mono text-slate-600">
-                  {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'}
+                  {item.created_at
+                    ? new Date(item.created_at).toLocaleDateString()
+                    : "N/A"}
                 </span>
               </div>
 
               <p className="text-xs text-slate-300 mb-4 line-clamp-2 min-h-8">
-                {item.intent || 'No intent description provided.'}
+                {item.intent || "No intent description provided."}
               </p>
 
               <div className="flex items-center gap-2 text-[9px] text-slate-500 font-mono mb-6 bg-black/30 p-2 rounded border border-slate-800/50">
@@ -75,25 +80,49 @@ export default async function GoldenLibraryPage() {
               </div>
 
               <div className="flex gap-2 pt-4 border-t border-slate-800/50">
-                {/* Now run_id is valid! */}
-                <Link
-                  href={`/runs/${item.run_id}`}
-                  className={`flex-1 text-center py-2 rounded-md text-[10px] font-black uppercase transition-all ${
-                    item.run_id
-                      ? 'bg-slate-800 hover:bg-slate-700 text-white'
-                      : 'bg-slate-900 text-slate-600 cursor-not-allowed'
-                  }`}
+                <form
+                  action={async () => {
+                    "use server";
+                    await runSavedTest(item.id.toString());
+                  }}
+                  className="flex-1"
                 >
-                  {item.run_id ? 'View Trace' : 'No Trace Link'}
-                </Link>
-                <button className="px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-md transition-colors">
-                  <Trash2 size={14} />
-                </button>
+                  <button
+                    type="submit"
+                    className="w-full py-2 rounded-md text-[10px] font-black uppercase transition-all bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-2"
+                  >
+                    <Play size={12} />
+                    Run Test
+                  </button>
+                </form>
+
+                {item.run_id && (
+                  <Link
+                    href={`/runs/${item.run_id}`}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-[10px] font-black uppercase transition-all"
+                  >
+                    View
+                  </Link>
+                )}
+
+                <form
+                  action={async () => {
+                    "use server";
+                    await deleteSavedTest(item.id);
+                  }}
+                >
+                  <button
+                    type="submit"
+                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-md transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </form>
               </div>
             </div>
           ))
         )}
       </div>
     </main>
-  )
+  );
 }

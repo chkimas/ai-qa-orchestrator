@@ -59,9 +59,10 @@ const PROVIDER_STRATEGIES: Record<
       "x-api-key": key,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
+      "dangerously-allow-browser": "true",
     }),
     body: {
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: "Hi" }],
       model: "claude-3-haiku-20240307",
       max_tokens: 1,
     },
@@ -75,10 +76,7 @@ const PROVIDER_STRATEGIES: Record<
     }),
     body: {
       model: "sonar",
-      messages: [
-        { role: "system", content: "Be precise." },
-        { role: "user", content: "ping" },
-      ],
+      messages: [{ role: "user", content: "ping" }],
       max_tokens: 1,
     },
   },
@@ -551,34 +549,42 @@ export async function getCrawlHistory() {
 }
 
 export async function testProviderKey(
-  provider: string
+  provider: string,
+  manualKey?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
     const { userId } = await auth();
     if (!userId) throw new Error("AUTH_UNAUTHORIZED");
 
-    const admin = getSupabaseAdmin();
-    const { data: settings, error: dbError } = await admin
-      .from("user_settings")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+    let apiKey: string | null = null;
 
-    if (dbError || !settings) throw new Error("VAULT_NOT_FOUND");
+    if (manualKey && manualKey.trim() !== "") {
+      apiKey = manualKey.trim();
+    } else {
+      const admin = getSupabaseAdmin();
+      const { data: settings } = await admin
+        .from("user_settings")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    const keyMap: Record<string, string | null> = {
-      openai: settings.encrypted_openai_key,
-      gemini: settings.encrypted_gemini_key,
-      groq: settings.encrypted_groq_key,
-      anthropic: settings.encrypted_anthropic_key,
-      sonar: settings.encrypted_perplexity_key,
-    };
+      if (!settings) throw new Error("VAULT_NOT_FOUND");
 
-    const encryptedKey = keyMap[provider];
-    if (!encryptedKey) throw new Error("KEY_NOT_STORED");
+      const keyMap: Record<string, string | null> = {
+        openai: settings.encrypted_openai_key,
+        gemini: settings.encrypted_gemini_key,
+        groq: settings.encrypted_groq_key,
+        anthropic: settings.encrypted_anthropic_key,
+        sonar: settings.encrypted_perplexity_key,
+      };
 
-    const apiKey = decrypt(encryptedKey);
-    if (!apiKey) throw new Error("DECRYPTION_FAILED");
+      const encryptedKey = keyMap[provider];
+      if (!encryptedKey) throw new Error("KEY_NOT_STORED");
+
+      apiKey = decrypt(encryptedKey);
+    }
+
+    if (!apiKey) throw new Error("KEY_NOT_FOUND");
 
     const strategy = PROVIDER_STRATEGIES[provider];
     if (!strategy) throw new Error("UNSUPPORTED_PROVIDER");
@@ -592,7 +598,6 @@ export async function testProviderKey(
       method: strategy.method,
       headers: strategy.headers(apiKey),
       body: strategy.body ? JSON.stringify(strategy.body) : undefined,
-      signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
@@ -601,9 +606,8 @@ export async function testProviderKey(
       return { success: false, message: "Invalid API Key" };
     }
 
-    if (!response.ok) {
-      return { success: false, message: `Provider Error: ${response.status}` };
-    }
+    if (!response.ok)
+      return { success: false, message: `Invalid Key (${response.status})` };
 
     return { success: true, message: "Connection Successful" };
   } catch (err) {
@@ -670,5 +674,27 @@ export async function deleteRun(runId: string): Promise<ActionResponse> {
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Purge failed";
     return { success: false, message: "Purge Failed", error: errMsg };
+  }
+}
+
+export async function deleteSavedTest(testId: number): Promise<ActionResponse> {
+  const { userId } = await auth();
+  if (!userId) return { success: false, message: "Unauthorized" };
+
+  try {
+    const admin = getSupabaseAdmin();
+    const { error } = await admin
+      .from("saved_tests")
+      .delete()
+      .eq("id", testId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+
+    revalidatePath("/registry");
+    return { success: true, message: "Test removed from registry." };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Delete failed";
+    return { success: false, message: "Delete Failed", error: errMsg };
   }
 }

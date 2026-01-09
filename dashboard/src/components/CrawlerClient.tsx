@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Radar,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import type { ExecutionLog } from "@/types/database";
 
@@ -40,6 +41,7 @@ export default function CrawlerClient() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function initReconNode() {
@@ -60,6 +62,7 @@ export default function CrawlerClient() {
         }
       } catch (err) {
         console.error("Uplink handshake failed:", err);
+        setError("Failed to initialize recon node");
       }
     }
     initReconNode();
@@ -69,13 +72,22 @@ export default function CrawlerClient() {
     if (e) e.preventDefault();
     if (status === "running" || !hasKeys || !url) return;
 
+    setError(null);
     setLogs("📡 ESTABLISHING UPLINK TO REMOTE NODE...\n");
     setStatus("running");
 
     try {
-      const result = await runScoutMission(url, username, password);
+      const result = await runScoutMission(
+        url,
+        username || undefined,
+        password || undefined
+      );
       if (result.success && result.runId) {
         setRunId(result.runId);
+        setLogs(
+          (prev) =>
+            prev + `✅ UPLINK ESTABLISHED\n🔍 INITIATING RECONNAISSANCE...\n`
+        );
       } else {
         throw new Error(result.message || "Uplink Refused");
       }
@@ -83,6 +95,7 @@ export default function CrawlerClient() {
       setStatus("idle");
       const msg = err instanceof Error ? err.message : "Unknown Error";
       setLogs((prev) => prev + `❌ CRITICAL_FAILURE: ${msg}\n`);
+      setError(msg);
     }
   };
 
@@ -91,16 +104,34 @@ export default function CrawlerClient() {
     const res = await getReportContent(runId);
     if (res && res.execution_logs) {
       const content =
-        `# ARGUS RECON REPORT: ${res.url}\nID: ${res.id}\n\n` +
+        `# ARGUS RECON REPORT: ${res.url}\nID: ${
+          res.id
+        }\nTimestamp: ${new Date().toISOString()}\n\n` +
         res.execution_logs
-          .map((l) => `[${l.status}] ${l.action}: ${l.message}`)
+          .map(
+            (l: ExecutionLog) =>
+              `[${l.created_at}] [${l.status}] ${l.action}: ${
+                l.message || l.details || "N/A"
+              }`
+          )
           .join("\n");
       const blob = new Blob([content], { type: "text/markdown" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `ARGUS_RECON_${runId.slice(0, 8)}.md`;
+      link.download = `ARGUS_RECON_${runId.slice(0, 8)}_${Date.now()}.md`;
       link.click();
+      URL.revokeObjectURL(link.href);
     }
+  };
+
+  const handleReset = () => {
+    setStatus("idle");
+    setLogs("");
+    setRunId(null);
+    setError(null);
+    setUrl("");
+    setUsername("");
+    setPassword("");
   };
 
   useEffect(() => {
@@ -132,6 +163,14 @@ export default function CrawlerClient() {
 
           if (newLog.status === "COMPLETED" || newLog.status === "FAILED") {
             setStatus("complete");
+
+            // Refresh history
+            getCrawlHistory().then((res) => {
+              if (res.success && res.history) {
+                setHistory(res.history as CrawlHistoryItem[]);
+              }
+            });
+
             setTimeout(() => {
               if (channelRef.current) {
                 supabase.removeChannel(channelRef.current);
@@ -191,11 +230,7 @@ export default function CrawlerClient() {
           </div>
           {status === "complete" ? (
             <button
-              onClick={() => {
-                setStatus("idle");
-                setLogs("");
-                setRunId(null);
-              }}
+              onClick={handleReset}
               className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black uppercase rounded transition-all"
             >
               New_Deployment
@@ -203,8 +238,8 @@ export default function CrawlerClient() {
           ) : (
             <button
               onClick={() => handleDeploy()}
-              disabled={status === "running" || !hasKeys}
-              className="px-6 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-20 text-white text-[10px] font-black uppercase rounded transition-all shadow-lg shadow-blue-600/20"
+              disabled={status === "running" || !hasKeys || !url}
+              className="px-6 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-20 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase rounded transition-all shadow-lg shadow-blue-600/20"
             >
               Deploy_Agent
             </button>
@@ -244,6 +279,12 @@ export default function CrawlerClient() {
             </div>
           )}
 
+          {error && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-[10px] text-red-400 font-bold">{error}</p>
+            </div>
+          )}
+
           <section className="space-y-4">
             <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
               <Globe size={12} /> Target_Endpoint
@@ -253,7 +294,17 @@ export default function CrawlerClient() {
               onChange={(e) => setUrl(e.target.value)}
               disabled={status === "running"}
               placeholder="https://example.com"
-              className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  url &&
+                  hasKeys &&
+                  status !== "running"
+                ) {
+                  handleDeploy();
+                }
+              }}
             />
           </section>
 
@@ -267,7 +318,7 @@ export default function CrawlerClient() {
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={status === "running"}
                 placeholder="Identifier / User"
-                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
               />
               <input
                 type="password"
@@ -275,7 +326,7 @@ export default function CrawlerClient() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={status === "running"}
                 placeholder="Credential / Pass"
-                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-black border border-slate-800 rounded p-3 text-xs text-blue-400 outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
               />
             </div>
             <p className="text-[9px] text-slate-700 italic leading-tight">
@@ -291,18 +342,25 @@ export default function CrawlerClient() {
             <div className="space-y-2">
               {history.length > 0 ? (
                 history.map((item) => (
-                  <div
+                  <Link
                     key={item.id}
-                    className="p-2 border border-slate-900 bg-slate-900/20 rounded group hover:border-slate-700 transition-all"
+                    href={`/runs/${item.id}`}
+                    className="block p-2 border border-slate-900 bg-slate-900/20 rounded group hover:border-slate-700 transition-all"
                   >
-                    <p className="text-[10px] text-slate-400 truncate font-bold">
-                      {item.url}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] text-slate-400 truncate font-bold flex-1">
+                        {item.url}
+                      </p>
+                      <ExternalLink
+                        size={10}
+                        className="text-slate-600 group-hover:text-blue-500 transition-colors"
+                      />
+                    </div>
                     <p className="text-[8px] text-slate-600 mt-1">
                       {new Date(item.timestamp).toLocaleDateString()} {"//"}{" "}
                       {item.id.slice(0, 8)}
                     </p>
-                  </div>
+                  </Link>
                 ))
               ) : (
                 <div className="text-[10px] text-slate-700 italic">
@@ -320,11 +378,14 @@ export default function CrawlerClient() {
             <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">
               Live_Telemetry_Stream
             </span>
-            <div className="flex gap-1">
-              <div className="h-1 w-1 rounded-full bg-slate-800" />
-              <div className="h-1 w-1 rounded-full bg-slate-800" />
-              <div className="h-1 w-1 rounded-full bg-slate-800" />
-            </div>
+            {runId && (
+              <Link
+                href={`/runs/${runId}`}
+                className="text-[9px] text-blue-500 hover:text-blue-400 font-bold uppercase flex items-center gap-1 transition-colors"
+              >
+                View_Full_Report <ExternalLink size={10} />
+              </Link>
+            )}
           </div>
 
           <div
@@ -346,8 +407,14 @@ export default function CrawlerClient() {
             )}
           </div>
 
-          {status === "complete" && (
-            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end animate-in fade-in slide-in-from-bottom-2">
+          {status === "complete" && runId && (
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+              <Link
+                href={`/runs/${runId}`}
+                className="flex items-center gap-2 text-slate-400 hover:text-blue-400 text-[10px] font-black uppercase transition-all"
+              >
+                <ExternalLink size={12} /> View_Full_Report
+              </Link>
               <button
                 onClick={handleDownload}
                 className="flex items-center gap-2 text-blue-500 hover:text-blue-400 text-[10px] font-black uppercase transition-all"
