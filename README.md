@@ -52,7 +52,7 @@ Autonomous "Spider" that maps routes, captures UI state, and identifies **Brittl
 - Produces tactical audit PDFs with neural insights
 - Auto-login detection for authenticated routes
 
-### 🔥 Chaos Protocol _(Coming Soon)_
+### 🔥 Chaos Protocol _(Unstable)_
 
 Adversarial testing via AI-generated destructive payloads (XSS, SQLi, overflows) and stochastic UI interactions to find system breaking points.
 
