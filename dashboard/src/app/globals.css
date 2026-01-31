@@ -11,8 +11,37 @@
   --text: #ededed;
   --text-strong: #ffffff;
   --success: #22c55e;
-  --accent-wash: rgba(59, 130, 246, 0.15);
-  --accent-glow: rgba(37, 99, 235, 0.4);
+  --accent-wash: rgba(99, 102, 241, 0.15);
+  --accent-glow: rgba(99, 102, 241, 0.4);
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.neural-border {
+  position: relative;
+  overflow: hidden;
+}
+
+.neural-border::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, transparent, var(--accent-glow), transparent);
+  height: 20%;
+  width: 100%;
+  animation: scanline 3s linear infinite;
+  opacity: 0.1;
+  pointer-events: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,53 +70,26 @@ body {
   }
 }
 
+/* Apply to anything with the utility class */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 10px;
+  background: var(--border-strong);
+  border-radius: 20px;
 }
 
-@layer utilities {
-  .bg-circuit {
-    background-image: radial-gradient(
-      circle at 2px 2px,
-      rgba(59, 130, 246, 0.15) 1px,
-      transparent 0
-    );
-    background-size: 40px 40px;
-  }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6; /* Blue accent on hover */
+}
 
-  .bg-pcb {
-    background-image: radial-gradient(
-        circle at 2px 2px,
-        rgba(59, 130, 246, 0.15) 1px,
-        transparent 0
-      ),
-      repeating-linear-gradient(0deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px),
-      repeating-linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0 1px, transparent 1px 48px);
-    background-size: 40px 40px, 240px 240px, 240px 240px;
-  }
-
-  @keyframes pulse-line {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    50% {
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-pulse-line {
-    animation: pulse-line 3s linear infinite;
-  }
+/* Firefox support */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }

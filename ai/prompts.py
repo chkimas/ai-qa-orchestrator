@@ -164,58 +164,68 @@ Target common vulnerabilities in forms (username, password, email, search fields
 
 CRAWLER_ANALYSIS_PROMPT = """
 <identity>
-Autonomous QA Page Classifier and Action Prioritizer.
+Autonomous QA DOM Analyst focused on automation stability and crawler decision-making.
 </identity>
 
 <context>
 URL: {url}
-CONTENT: {body_text}
+RAW_DOM_TEXT:
+{body_text}
 </context>
 
 <task>
-Analyze the content above and provide structured intelligence:
-1. Categorize the page_type based on content and URL patterns.
-2. Determine if the status is 'OK' (functional page) or 'BLOCKED' (404, bot-wall, crash, access-denied, or blank page).
-3. Identify the top 3 most important interactive elements that would lead to deeper site discovery.
-4. Rank each action by priority (1-10, where 10 = critical path, 1 = low-value link).
-5. Provide stable Playwright-compatible selectors for each action.
+Analyze the DOM content above as if you were preparing a Playwright-based crawler.
+
+You MUST:
+- Base all conclusions on observable DOM signals (tags, attributes, scripts, text, structure).
+- Prefer concrete technical facts over descriptive summaries.
+- Assume this output will gate automated navigation decisions.
+
+Respond ONLY with a valid JSON object matching the schema below.
 </task>
 
-<selector_rules>
-- NEVER use descriptive placeholders.
-- ALWAYS provide concrete selectors: CSS (#id, .class), text='Link Text', role=link, or [data-testid='value'].
-- If uncertain, use semantic guesses based on visible text or common patterns.
-</selector_rules>
+<analysis_requirements>
+1. page_type:
+   - Infer based on DOM structure and URL patterns (e.g., presence of <form>, <input type="password">, upload controls, tables, or dynamic placeholders).
+2. status:
+   - OK: Page appears automatable and functionally reachable.
+   - BRITTLE: Page likely to fail automation due to technical instability.
+   - You MUST justify this choice with a concrete technical reason.
+3. fingerprint.selector:
+   - Choose the MOST stable selector for the primary user action.
+   - Prefer IDs, data-testid, role selectors.
+   - Avoid text selectors unless unavoidable.
+4. fingerprint.risk:
+   - State the precise technical reason this selector or page may fail.
+   - Examples: dynamic CSRF tokens, no stable IDs, async hydration, shadow DOM, bot wall, randomized classnames.
+5. intelligence:
+   - ONE specific, technical observation grounded in visible DOM evidence.
+   - Reference actual elements, attributes, or script behavior.
+   - Vague statements are invalid.
+</analysis_requirements>
+
+<failure_rules>
+- If no stable selector can be identified, status MUST be "BRITTLE".
+- If conclusions cannot be grounded in observable DOM signals, status MUST be "BRITTLE".
+- Descriptive fluff without technical evidence is INVALID.
+</failure_rules>
 
 <constraints>
-- Return ONLY a raw JSON object. No markdown fences, no prose.
-- PROSE IS FORBIDDEN. No explanations, no preambles.
-- If no interactive elements are found, return an empty array for top_3_actions.
-- Priority scale: 10 = login/checkout/upload (critical flows), 5 = navigation links, 1 = footer links.
+- Output ONLY raw JSON.
+- No prose, no markdown, no explanations.
+- Do NOT invent elements that are not implied by the DOM text.
 </constraints>
 
 <schema>
 {{
-  "page_type": "login|dashboard|product|cart|checkout|upload|form|content|error",
-  "status": "OK|BLOCKED",
-  "test_name": "Autonomous Discovery",
-  "top_3_actions": [
-    {{
-      "selector": "#login-btn",
-      "description": "Primary login button",
-      "priority": 10
-    }},
-    {{
-      "selector": "text='File Upload'",
-      "description": "Navigate to file upload feature",
-      "priority": 8
-    }},
-    {{
-      "selector": "a[href='/products']",
-      "description": "Browse product catalog",
-      "priority": 5
-    }}
-  ]
+  "page_type": "login|upload|table|dynamic_content",
+  "status": "OK|BRITTLE",
+  "test_name": "Stability Audit",
+  "fingerprint": {{
+    "selector": "string",
+    "risk": "string"
+  }},
+  "intelligence": "string"
 }}
 </schema>
 """.strip()

@@ -26,6 +26,13 @@ WORKDIR /home/user/app
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
+    libpango-1.0-0 \
+    libharfbuzz0b \
+    libpangoft2-1.0-0 \
+    libpangocairo-1.0-0 \
+    libglib2.0-0 \
+    fonts-liberation \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir playwright==1.49.0
@@ -51,4 +58,4 @@ EXPOSE 7860
 
 # Start with Gunicorn + UvicornWorker
 # Using --timeout 600 to allow for long-running AI missions.
-CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "worker_api:app", "--bind", "0.0.0.0:7860", "--timeout", "600", "--access-logfile", "-", "--error-logfile", "-"]
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "worker_api:app", "--bind", "0.0.0.0:7860", "--timeout", "600", "--reload", "--access-logfile", "-", "--error-logfile", "-"]

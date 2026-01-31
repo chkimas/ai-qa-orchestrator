@@ -1,0 +1,11 @@
+{
+  "name": "ai-qa-orchestrator-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter argus dev",
+    "build": "pnpm --filter argus build",
+    "start": "pnpm --filter argus start",
+    "lint": "pnpm --filter argus lint"
+  }
+}

@@ -64,18 +64,49 @@ function ArgusMythicBackground() {
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-      {ready ? (
-        <Particles id="argus-particles" options={options} className="absolute inset-0" />
-      ) : null}
+      <div
+        className={`absolute inset-0 transition-opacity duration-700 ${
+          ready ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {ready && <Particles id="argus-particles" options={options} className="absolute inset-0" />}
+      </div>
 
       <div className="absolute left-1/2 top-[7.6%] -translate-x-1/2 -translate-y-1/2 w-[min(980px,92vw)] opacity-60">
         <svg viewBox="0 0 1000 420" className="w-full h-auto">
           <defs>
             <radialGradient id="iris" cx="50%" cy="50%" r="55%">
               <stop offset="0%" stopColor="#ffffff" stopOpacity="0.14" />
-              <stop offset="55%" stopColor="rgba(59, 130, 246, 0.15)" stopOpacity="1" />
+              <stop offset="55%" stopColor="rgba(59, 130, 246, 0.15)" stopOpacity="1">
+                <animate
+                  attributeName="stopOpacity"
+                  values="0.15;0.3;0.15"
+                  dur="4s"
+                  repeatCount="indefinite"
+                />
+              </stop>
               <stop offset="100%" stopColor="#05070a" stopOpacity="0" />
             </radialGradient>
+
+            <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+              <feComponentTransfer in="blur" result="glow">
+                <feFuncA type="linear" slope="2.5" />
+              </feComponentTransfer>
+              <feMerge>
+                <feMergeNode in="glow" />
+                <feMergeNode in="glow" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+
+            <filter id="pupilGlow">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
 
             <clipPath id="eyeClip">
               <path d="M80 210 C 210 90, 380 60, 500 60 C 620 60, 790 90, 920 210 C 790 330, 620 360, 500 360 C 380 360, 210 330, 80 210 Z" />
@@ -85,27 +116,61 @@ function ArgusMythicBackground() {
           <path
             d="M80 210 C 210 90, 380 60, 500 60 C 620 60, 790 90, 920 210 C 790 330, 620 360, 500 360 C 380 360, 210 330, 80 210 Z"
             fill="transparent"
-            stroke="rgba(59, 130, 246, 0.15)"
+            stroke="rgba(59, 130, 246, 0.3)"
             strokeWidth="2"
-          />
+            filter="url(#neonGlow)"
+          >
+            <animate
+              attributeName="stroke-opacity"
+              values="0.3;0.6;0.3"
+              dur="3s"
+              repeatCount="indefinite"
+            />
+          </path>
 
           <g clipPath="url(#eyeClip)">
             <circle cx="500" cy="210" r="150" fill="url(#iris)" />
+
             <circle
               cx="500"
               cy="210"
-              r="44"
-              fill="#05070a"
-              className="origin-center animate-[argus-scan_9s_ease-in-out_infinite]"
-            />
-            <circle
-              cx="500"
-              cy="210"
-              r="10"
-              fill="#ffffff"
-              opacity="0.35"
-              className="origin-center animate-[argus-scan_9s_ease-in-out_infinite]"
-            />
+              r="60"
+              fill="none"
+              stroke="rgba(59, 130, 246, 0.2)"
+              strokeWidth="1"
+              opacity="0.5"
+            >
+              <animate attributeName="r" values="60;150;60" dur="6s" repeatCount="indefinite" />
+              <animate
+                attributeName="opacity"
+                values="0.5;0;0.5"
+                dur="6s"
+                repeatCount="indefinite"
+              />
+            </circle>
+
+            <circle cx="500" cy="210" r="44" fill="#05070a" filter="url(#pupilGlow)">
+              <animateTransform
+                attributeName="transform"
+                attributeType="XML"
+                type="translate"
+                values="-38 0; 38 -8; -38 0"
+                dur="9s"
+                repeatCount="indefinite"
+              />
+            </circle>
+
+            <circle cx="500" cy="210" r="10" fill="#ffffff" opacity="0.35">
+              <animateTransform
+                attributeName="transform"
+                attributeType="XML"
+                type="translate"
+                values="-38 0; 38 -8; -38 0"
+                dur="9s"
+                repeatCount="indefinite"
+              />
+            </circle>
+
             <rect
               x="0"
               y="0"
@@ -121,15 +186,6 @@ function ArgusMythicBackground() {
       </div>
 
       <style jsx>{`
-        @keyframes argus-scan {
-          0%,
-          100% {
-            transform: translateX(-38px);
-          }
-          50% {
-            transform: translateX(38px);
-          }
-        }
         @keyframes argus-blink {
           0%,
           92%,
@@ -177,12 +233,11 @@ export default function LandingPage() {
           measuredLatency = Math.floor(navEntry.duration % 100)
         }
       }
-
-      // Update state once for both values
       setNodeLocation(location)
       setLatency(measuredLatency)
     }
     const metricsTimer = setTimeout(initClientMetrics, 0)
+
     return () => {
       window.removeEventListener('scroll', handleScroll)
       clearTimeout(metricsTimer)
@@ -333,29 +388,57 @@ export default function LandingPage() {
                   </span>
                 </div>
 
-                <div className="p-8 font-mono text-left space-y-4 bg-black/20 rounded-b-2xl text-xs md:text-sm">
-                  <p className="text-blue-500">$ argus link --neural-sync</p>
+                <div className="p-8 font-mono text-left space-y-4 bg-black/20 rounded-b-2xl text-xs md:text-sm border-t border-white/5 shadow-2xl">
+                  {/* The Triggering Command */}
+                  <p className="text-blue-500">
+                    $ argus mission launch --target=&quot;https://example.com&quot; --mode=sniper
+                  </p>
+
                   <p className="text-slate-500 italic text-xs">
-                    [STATUS] Establishing Synaptic Connection... OK
+                    [SYSTEM] Initializing Mission Brief... OK
                   </p>
+
                   <p className="text-slate-400 flex gap-4">
-                    <span>01</span> ↳ Perception Active. Scanning target DOM structure...
+                    <span className="opacity-50">01</span>
+                    <span>
+                      ↳ 📡 Encoding Tactical Payload (Base64)...{' '}
+                      <span className="text-green-500">SUCCESS</span>
+                    </span>
                   </p>
+
                   <p className="text-slate-400 flex gap-4">
-                    <span>02</span> ↳ Extracting Neural Fingerprints... SUCCESS
+                    <span className="opacity-50">02</span>
+                    <span>
+                      ↳ 🧠 Dispatching to Argus Neural Worker...{' '}
+                      <span className="text-blue-400">ACKNOWLEDGED</span>
+                    </span>
                   </p>
-                  <p className="text-yellow-500 flex gap-4">
-                    <span>03</span> [WARN] Logic Drift detected in &quot;Checkout_Flow&quot;
+
+                  <p className="text-purple-400 flex gap-4">
+                    <span className="opacity-50">03</span>
+                    <span>↳ [SHIELD] Neural Privacy active. Stripping PII & Selectors.</span>
                   </p>
-                  <p className="text-blue-400 flex gap-4">
-                    <span>04</span> [HEAL] Baseline Integrity Restored via AI Synthesis
+
+                  <p className="text-slate-300 flex gap-4 border-l-2 border-yellow-500/50 pl-4 ml-2">
+                    <span className="opacity-50 text-yellow-500">04</span>
+                    <span>[EXEC] Agent Perception: Analyzing Checkout_Flow...</span>
                   </p>
-                  <p className="text-green-500 font-bold mt-4 tracking-tight uppercase">
-                    [READY] Operational Superiority Confirmed.
+
+                  <p className="text-blue-400 flex gap-4 border-l-2 border-blue-500/50 pl-4 ml-2">
+                    <span className="opacity-50 text-blue-500">05</span>
+                    <span>
+                      [SYNC] Direct Log Ingestion...{' '}
+                      <span className="text-white">ID: 84af-92xc</span>
+                    </span>
                   </p>
+
+                  <p className="text-green-500 font-bold mt-4 tracking-tight uppercase animate-pulse">
+                    [UPLINK] Stream established. Awaiting Neural Logs.
+                  </p>
+
                   <div
                     aria-hidden="true"
-                    className="h-5 w-2 bg-blue-600 animate-pulse inline-block"
+                    className="h-5 w-2 bg-blue-600 animate-pulse inline-block align-middle ml-1"
                   />
                 </div>
               </div>

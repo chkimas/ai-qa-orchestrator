@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import re
 from typing import Set, List, Dict, Optional
 from urllib.parse import urlparse, parse_qs, urlencode
 from playwright.async_api import Page
@@ -10,138 +9,205 @@ from ai.provider import AIProvider
 from data.supabase_client import db_bridge
 
 logger = logging.getLogger("orchestrator.crawler")
-logger.setLevel(logging.INFO)
+
 
 class AutonomousCrawler:
-    def __init__(self, start_url: str, run_id: str, max_pages: int = 20, credentials: Optional[Dict] = None):
-        self.run_id = run_id
-        self.start_url: str = start_url
-        self.base_domain: str = urlparse(start_url).netloc.replace("www.", "")
-        self.max_pages: int = max_pages
-        self.credentials: Optional[Dict] = credentials
+    """
+    AI-powered autonomous web crawler with intelligent page analysis.
+    Discovers and analyzes pages within a domain boundary.
+    """
 
+    def __init__(
+        self,
+        start_url: str,
+        run_id: str,
+        user_id: str,
+        max_pages: int = 20,
+        credentials: Optional[Dict] = None,
+        api_key: Optional[str] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None
+    ):
+        self.run_id = run_id
+        self.user_id = user_id
+        self.start_url = start_url
+        self.api_key = api_key
+        self.provider = provider
+        self.model = model
+        self.base_domain = urlparse(start_url).netloc.replace("www.", "")
+        self.max_pages = max_pages
+        self.credentials = credentials
         self.visited: Set[str] = set()
         self.queue: List[str] = [start_url]
         self.report_data: List[Dict] = []
-        self.is_logged_in: bool = False
+        self.is_logged_in = False
 
     def _normalize_url(self, url: str) -> str:
-        """Standardize URLs to prevent redundant crawling."""
+        """Remove tracking parameters and normalize URL structure."""
         try:
             p = urlparse(url)
-            q = {k: v for k, v in parse_qs(p.query).items() if not k.startswith(('utm_', 'ref', 'gclid'))}
-            return f"{p.scheme}://{p.netloc}{p.path}?{urlencode(q, doseq=True)}".rstrip('?')
+            q = {
+                k: v for k, v in parse_qs(p.query).items()
+                if not k.startswith(('utm_', 'ref', 'gclid', 'fbclid'))
+            }
+            normalized = f"{p.scheme}://{p.netloc}{p.path}"
+            if q:
+                normalized += f"?{urlencode(q, doseq=True)}"
+            return normalized
         except Exception:
             return url
 
     async def _handle_login(self, page: Page) -> bool:
-        """Fuzzy login handler for autonomous authentication."""
+        """Attempt automatic login if credentials provided."""
         if not self.credentials or self.is_logged_in:
             return False
+
         try:
-            # Anchor to the password field using a more robust check
             pw_field = page.locator("input[type='password'], input[name*='pass'], input[id*='pass']")
             if await pw_field.count() == 0:
                 return False
 
-            # Use the credentials from your Injection Data
             user_selector = "input[name*='user'], input[id*='user'], input[name*='email'], [placeholder*='Email']"
             await page.fill(user_selector, self.credentials['username'])
             await pw_field.fill(self.credentials['password'])
-
             await page.keyboard.press("Enter")
-            await page.wait_for_load_state("networkidle")
+            await page.wait_for_load_state("networkidle", timeout=10000)
+
             self.is_logged_in = True
-            logger.info(f"🔑 Autonomous login successful for {self.base_domain}")
+            logger.info("✅ Automatic login successful")
             return True
-        except Exception:
+
+        except Exception as e:
+            logger.warning(f"Login attempt failed: {e}")
             return False
 
-    async def _analyze_page(self, page: Page, url: str):
-        """AI-driven page classification and stability logging."""
+    async def _analyze_page(self, page: Page, url: str) -> bool:
+        """Analyze page content using AI and log results."""
         try:
-            body_text = await page.evaluate("document.body.innerText.slice(0, 3000)")
+            body_text = await page.evaluate("document.body.innerText.slice(0, 10000)")
             prompt = CRAWLER_ANALYSIS_PROMPT.format(url=url, body_text=body_text)
 
-            resp = await AIProvider.generate(prompt)
-            match = re.search(r"\{.*\}", resp, re.DOTALL)
-            if not match:
-                logger.warning(f"⚠️ Analysis result for {url} contained no JSON.")
-                return
+            resp = await AIProvider.generate(
+                prompt=prompt,
+                provider=self.provider,
+                model=self.model,
+                encrypted_key=self.api_key,
+                json_mode=True
+            )
 
-            data = json.loads(match.group(0))
-            fingerprint = data.get("fingerprint", {})
+            if not resp:
+                logger.warning(f"Empty AI response for {url}")
+                return False
 
-            # Prepare report data for the Reporter
+            data = json.loads(resp)
+
+            if not all(k in data for k in ["page_type", "status"]):
+                logger.warning(f"Incomplete AI response for {url}")
+                return False
+
             report_entry = {
                 "url": url,
                 "page_type": data.get("page_type", "General"),
                 "test_executed": data.get("test_name", "Autonomous Discovery"),
                 "test_result": "PASS" if data.get("status") == "OK" else "FAIL",
-                "dna": fingerprint,
+                "actions": data.get("top_3_actions", []),
                 "timestamp": asyncio.get_event_loop().time()
             }
             self.report_data.append(report_entry)
 
-            # LOG TO SUPABASE: Feeds the Risk Heatmap
             db_bridge.log_step(
                 run_id=self.run_id,
-                step_index=len(self.report_data),
+                step_id=len(self.report_data),
                 role="crawler",
                 action="analysis",
                 status="PASSED" if data.get("status") == "OK" else "FAILED",
-                message=f"Analyzed {data.get('page_type')} - Status: {data.get('status')}",
-                url=url,
-                selector=fingerprint.get("selector") if fingerprint else None
+                message=f"[{data.get('page_type')}] {data.get('intelligence', '')}",
+                url=url
             )
 
+            return True
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed for {url}: {e}")
+            return False
         except Exception as e:
-            logger.warning(f"⚠️ Analysis failed for {url}: {e}")
+            logger.error(f"Analysis failed for {url}: {e}")
+            return False
 
     async def _discover_links(self, page: Page) -> List[str]:
-        """Extract internal links to continue the crawl."""
+        """Extract and normalize all in-domain links from current page."""
         try:
             hrefs = await page.evaluate(
                 "() => Array.from(document.querySelectorAll('a[href]')).map(a => a.href)"
             )
-            # Stay within the base domain
-            return [self._normalize_url(h) for h in hrefs if self.base_domain in h]
-        except Exception:
+            return [
+                self._normalize_url(h) for h in hrefs
+                if self.base_domain in h and not h.endswith(('.pdf', '.zip', '.jpg', '.png'))
+            ]
+        except Exception as e:
+            logger.warning(f"Link discovery failed: {e}")
             return []
 
     async def run(self, page: Page) -> List[Dict]:
-        """The Main Autonomous Execution Loop."""
-        logger.info(f"🚀 Starting Autonomous Crawl on {self.start_url}")
+        """Execute autonomous crawl and return collected data."""
+        logger.info(f"🚀 Starting Autonomous Crawler on {self.base_domain}")
+        consecutive_ai_failures = 0
 
         while self.queue and len(self.visited) < self.max_pages:
             url = self.queue.pop(0)
+
             if url in self.visited:
                 continue
+
             self.visited.add(url)
 
             try:
-                # wait_until="networkidle" is best for React/Next.js discovery
                 response = await page.goto(url, wait_until="networkidle", timeout=15000)
 
                 if not response or response.status >= 400:
-                    logger.error(f"⚠️ Page Load Error {response.status if response else 'N/A'} at {url}")
+                    logger.warning(f"Skipping {url} (HTTP {response.status if response else 'timeout'})")
                     continue
 
-                # Handle login if we encounter a password field
                 if not self.is_logged_in and self.credentials:
                     await self._handle_login(page)
 
-                # Perform AI Analysis
-                await self._analyze_page(page, url)
+                success = await self._analyze_page(page, url)
 
-                # Discover and Queue new links
-                new_links = await self._discover_links(page)
-                for link in new_links:
-                    if link not in self.visited:
+                if success and url == self.start_url:
+                    try:
+                        screenshot_bytes = await page.screenshot(type="png")
+                        screenshot_url = db_bridge.upload_screenshot(screenshot_bytes)
+                        db_bridge.client.table("test_runs").update({
+                            "report_url": screenshot_url
+                        }).eq("id", self.run_id).execute()
+                    except Exception as e:
+                        logger.warning(f"Scout entry capture failed: {e}")
+
+                if success:
+                    consecutive_ai_failures = 0
+                else:
+                    consecutive_ai_failures += 1
+
+                if consecutive_ai_failures >= 3:
+                    logger.error("⚠️ Neural uplink disconnected - aborting crawl")
+                    db_bridge.log_step(
+                        run_id=self.run_id,
+                        step_id=999,
+                        role="system",
+                        action="scout",
+                        status="FAILED",
+                        message="CRITICAL: Neural Uplink disconnected after 3 consecutive failures"
+                    )
+                    break
+
+                discovered = await self._discover_links(page)
+                for link in discovered:
+                    if link not in self.visited and link not in self.queue:
                         self.queue.append(link)
 
             except Exception as e:
-                logger.error(f"💥 Crawl stalled at {url}: {e}")
+                logger.error(f"Crawl error at {url}: {e}")
+                continue
 
-        logger.info(f"🏁 Crawl complete. Visited {len(self.visited)} pages.")
+        logger.info(f"✅ Crawl complete: {len(self.visited)} pages analyzed")
         return self.report_data

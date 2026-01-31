@@ -1,9 +1,9 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useRef } from "react";
-import { launchMission } from "@/actions/orchestrator";
-import { useUser } from "@clerk/nextjs";
-import { getVaultStatus } from "@/lib/actions";
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { useUser } from '@clerk/nextjs'
+import { getVaultStatus, runTest } from '@/lib/actions'
 import {
   Play,
   Settings,
@@ -18,142 +18,137 @@ import {
   BookOpen,
   ChevronDown,
   Zap,
-} from "lucide-react";
-import { AIProvider } from "@/types/database";
+} from 'lucide-react'
+import { AIProvider } from '@/types/database'
 
-const MODEL_MAPPING: Record<
-  string,
-  { id: string; label: string; desc: string }[]
-> = {
+const MODEL_MAPPING: Record<string, { id: string; label: string; desc: string }[]> = {
   openai: [
     {
-      id: "gpt-4o",
-      label: "GPT-4o",
-      desc: "Omni engine; swift multimodal judgment.",
+      id: 'gpt-4o',
+      label: 'GPT-4o',
+      desc: 'Omni engine; swift multimodal judgment.',
     },
     {
-      id: "gpt-4o-mini",
-      label: "GPT-4o Mini",
-      desc: "Lean compute; high-throughput replies.",
+      id: 'gpt-4o-mini',
+      label: 'GPT-4o Mini',
+      desc: 'Lean compute; high-throughput replies.',
     },
   ],
   gemini: [
     {
-      id: "gemini-2.0-flash",
-      label: "Gemini 2.0 Flash",
-      desc: "Next-gen speed; nimble multimodal inference.",
+      id: 'gemini-2.0-flash',
+      label: 'Gemini 2.0 Flash',
+      desc: 'Next-gen speed; nimble multimodal inference.',
     },
     {
-      id: "gemini-1.5-pro",
-      label: "Gemini 1.5 Pro",
-      desc: "Long context; steadfast deep reasoning.",
+      id: 'gemini-1.5-pro',
+      label: 'Gemini 1.5 Pro',
+      desc: 'Long context; steadfast deep reasoning.',
     },
   ],
   groq: [
     {
-      id: "llama-3.3-70b-versatile",
-      label: "Llama 3.3 70B",
-      desc: "Flagship versatility; broad competence at scale.",
+      id: 'llama-3.3-70b-versatile',
+      label: 'Llama 3.3 70B',
+      desc: 'Flagship versatility; broad competence at scale.',
     },
     {
-      id: "llama-3.1-8b-instant",
-      label: "Llama 3.1 8B",
-      desc: "High-speed sprinter; ultra-low latency.",
+      id: 'llama-3.1-8b-instant',
+      label: 'Llama 3.1 8B',
+      desc: 'High-speed sprinter; ultra-low latency.',
     },
   ],
   anthropic: [
     {
-      id: "claude-3-5-sonnet-latest",
-      label: "Claude 3.5 Sonnet",
-      desc: "Keen for code; high-fidelity reasoning.",
+      id: 'claude-3-5-sonnet-latest',
+      label: 'Claude 3.5 Sonnet',
+      desc: 'Keen for code; high-fidelity reasoning.',
     },
     {
-      id: "claude-3-5-haiku-latest",
-      label: "Claude 3.5 Haiku",
-      desc: "Fastest Claude; improved intelligence at scale.",
+      id: 'claude-3-5-haiku-latest',
+      label: 'Claude 3.5 Haiku',
+      desc: 'Fastest Claude; improved intelligence at scale.',
     },
   ],
   sonar: [
     {
-      id: "sonar-reasoning-pro",
-      label: "Sonar Reasoning Pro",
-      desc: "Deep solver; high-accuracy web grounded research.",
+      id: 'sonar-reasoning-pro',
+      label: 'Sonar Reasoning Pro',
+      desc: 'Deep solver; high-accuracy web grounded research.',
     },
     {
-      id: "sonar",
-      label: "Sonar",
-      desc: "Web-grounded chat; nimble answers with citations.",
+      id: 'sonar',
+      label: 'Sonar',
+      desc: 'Web-grounded chat; nimble answers with citations.',
     },
   ],
-};
+}
 
 export default function NewRunModal() {
-  const { user } = useUser();
-  const hasSyncedRef = useRef(false);
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
-  const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({});
-  const [selectedProvider, setSelectedProvider] =
-    useState<AIProvider>("gemini");
-  const [hasAnyKey, setHasAnyKey] = useState<boolean>(true);
-  const [isChaos, setIsChaos] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useUser()
+  const router = useRouter()
+  const hasSyncedRef = useRef(false)
+  const [selectedModel, setSelectedModel] = useState<string>('')
+  const [isOpen, setIsOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
+  const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({})
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('gemini')
+  const [hasAnyKey, setHasAnyKey] = useState<boolean>(true)
+  const [isChaos, setIsChaos] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const PROVIDERS: { id: AIProvider; name: string }[] = [
-    { id: "openai", name: "OpenAI (GPT-4o)" },
-    { id: "gemini", name: "Google Gemini" },
-    { id: "groq", name: "Groq (Llama 3)" },
-    { id: "anthropic", name: "Anthropic (Claude)" },
-    { id: "sonar", name: "Perplexity Sonar" },
-  ];
+    { id: 'openai', name: 'OpenAI (GPT-4o)' },
+    { id: 'gemini', name: 'Google Gemini' },
+    { id: 'groq', name: 'Groq (Llama 3)' },
+    { id: 'anthropic', name: 'Anthropic (Claude)' },
+    { id: 'sonar', name: 'Perplexity Sonar' },
+  ]
 
   useEffect(() => {
     if (!isOpen) {
-      hasSyncedRef.current = false;
-      return;
+      hasSyncedRef.current = false
+      return
     }
 
     async function checkVault() {
-      if (!user || !isOpen) return;
-      const data = await getVaultStatus();
-      const vaultKeys = data.keys as Record<string, boolean>;
-      setVaultStatus(vaultKeys);
-      const anyExist = Object.values(vaultKeys).some((v) => v === true);
-      setHasAnyKey(anyExist);
+      if (!user || !isOpen) return
+      const data = await getVaultStatus()
+      const vaultKeys = data.keys as Record<string, boolean>
+      setVaultStatus(vaultKeys)
+      const anyExist = Object.values(vaultKeys).some(v => v === true)
+      setHasAnyKey(anyExist)
 
       if (anyExist && !hasSyncedRef.current) {
-        let providerToSet = selectedProvider;
+        let providerToSet = selectedProvider
         if (data.preferred && vaultKeys[data.preferred]) {
-          providerToSet = data.preferred as AIProvider;
+          providerToSet = data.preferred as AIProvider
         } else if (!vaultKeys[selectedProvider]) {
-          const firstAvailable = Object.keys(vaultKeys).find(
-            (k) => vaultKeys[k]
-          ) as AIProvider;
-          if (firstAvailable) providerToSet = firstAvailable;
+          const firstAvailable = Object.keys(vaultKeys).find(k => vaultKeys[k]) as AIProvider
+          if (firstAvailable) providerToSet = firstAvailable
         }
 
-        setSelectedProvider(providerToSet);
+        setSelectedProvider(providerToSet)
         if (MODEL_MAPPING[providerToSet]) {
-          setSelectedModel(MODEL_MAPPING[providerToSet][0].id);
+          setSelectedModel(MODEL_MAPPING[providerToSet][0].id)
         }
-        hasSyncedRef.current = true;
+        hasSyncedRef.current = true
       }
     }
-    checkVault();
-  }, [isOpen, user, selectedProvider]);
+    checkVault()
+  }, [isOpen, user, selectedProvider])
 
   async function handleSubmit(formData: FormData) {
-    setIsLoading(true);
-    setError(null);
-    const result = await launchMission(formData);
+    setIsLoading(true)
+    setError(null)
+    const result = await runTest(formData)
 
     if (result.success) {
-      window.location.href = `/runs/${result.runId}`;
+      router.push(`/runs/${result.runId}`)
     } else {
-      setError(result.error || "Launch Failed");
-      setIsLoading(false);
+      setError(result.error || 'Launch Failed')
+      setIsLoading(false)
     }
   }
 
@@ -168,7 +163,7 @@ export default function NewRunModal() {
 
       {isOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 neural-border">
             <header className="bg-slate-950 p-5 border-b border-slate-800 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-lg bg-blue-600/20 flex items-center justify-center border border-blue-500/30">
@@ -191,46 +186,41 @@ export default function NewRunModal() {
               </button>
             </header>
 
-            <form
-              action={handleSubmit}
-              className="flex-1 flex flex-col overflow-hidden"
-            >
+            <form action={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
               <div className="grid grid-cols-1 md:grid-cols-2 flex-1 overflow-hidden">
                 {/* Left Column - Scrollable */}
-                <div className="p-6 border-r border-slate-800 space-y-6 overflow-y-auto">
+                <div className="p-6 border-r border-slate-800 space-y-6 overflow-y-auto custom-scrollbar">
                   {/* Neural Engine Selection */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                      <Settings size={12} className="text-blue-500" /> Neural
-                      Engine
+                      <Settings size={12} className="text-blue-500" /> Neural Engine
                     </label>
                     <div className="grid grid-cols-1 gap-1.5">
-                      {PROVIDERS.map((p) => (
+                      {PROVIDERS.map(p => (
                         <button
                           key={p.id}
                           type="button"
                           disabled={!vaultStatus[p.id]}
                           onClick={() => {
-                            setSelectedProvider(p.id);
-                            if (MODEL_MAPPING[p.id])
-                              setSelectedModel(MODEL_MAPPING[p.id][0].id);
+                            setSelectedProvider(p.id)
+                            if (MODEL_MAPPING[p.id]) setSelectedModel(MODEL_MAPPING[p.id][0].id)
                           }}
                           className={`flex items-center justify-between px-3 py-2 rounded-md border transition-all text-xs outline-none ${
                             selectedProvider === p.id
-                              ? "border-blue-500 bg-blue-500/10 text-white shadow-[0_0_10px_rgba(59,130,246,0.15)]"
-                              : "border-slate-800/60 bg-slate-950/40 text-slate-500 hover:border-slate-700"
+                              ? 'border-blue-500 bg-blue-500/10 text-white shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                              : 'border-slate-800/60 bg-slate-950/40 text-slate-500 hover:border-slate-700'
                           } ${
                             !vaultStatus[p.id]
-                              ? "opacity-20 cursor-not-allowed border-dashed"
-                              : "cursor-pointer"
+                              ? 'opacity-20 cursor-not-allowed border-dashed'
+                              : 'cursor-pointer'
                           }`}
                         >
                           <span className="flex items-center gap-2">
                             <div
                               className={`w-1 h-1 rounded-full ${
                                 selectedProvider === p.id
-                                  ? "bg-blue-400 animate-pulse"
-                                  : "bg-slate-700"
+                                  ? 'bg-blue-400 animate-pulse'
+                                  : 'bg-slate-700'
                               }`}
                             />
                             {p.name}
@@ -240,35 +230,25 @@ export default function NewRunModal() {
                           )}
                         </button>
                       ))}
-                      <input
-                        type="hidden"
-                        name="provider"
-                        value={selectedProvider}
-                      />
+                      <input type="hidden" name="provider" value={selectedProvider} />
                     </div>
                   </div>
 
                   {/* Model Configuration */}
                   <div className="space-y-2.5">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                      <Cpu size={12} className="text-blue-500" /> Model
-                      Configuration
+                      <Cpu size={12} className="text-blue-500" /> Model Configuration
                     </label>
                     <div className="relative group">
                       <select
                         name="model"
                         value={selectedModel}
-                        onChange={(e) => setSelectedModel(e.target.value)}
+                        onChange={e => setSelectedModel(e.target.value)}
                         className="w-full appearance-none bg-slate-950/40 border border-slate-800 rounded-md pl-3 pr-10 py-2.5 text-[11px] font-mono text-slate-300 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all cursor-pointer hover:bg-slate-900/60"
                       >
-                        {MODEL_MAPPING[selectedProvider]?.map((model) => (
-                          <option
-                            key={model.id}
-                            value={model.id}
-                            className="bg-[#0b0e14]"
-                          >
-                            {model.label.toUpperCase()} —{" "}
-                            {model.desc.toUpperCase()}
+                        {MODEL_MAPPING[selectedProvider]?.map(model => (
+                          <option key={model.id} value={model.id} className="bg-[#0b0e14]">
+                            {model.label.toUpperCase()} — {model.desc.toUpperCase()}
                           </option>
                         ))}
                       </select>
@@ -283,7 +263,7 @@ export default function NewRunModal() {
                       <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
                       <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
                         Stream_Ready: {selectedProvider.toUpperCase()}_
-                        {selectedModel?.replace(/-/g, "_").toUpperCase()}
+                        {selectedModel?.replace(/-/g, '_').toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -304,10 +284,7 @@ export default function NewRunModal() {
 
                   {!hasAnyKey && (
                     <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
-                      <AlertCircle
-                        className="text-red-500 shrink-0"
-                        size={16}
-                      />
+                      <AlertCircle className="text-red-500 shrink-0" size={16} />
                       <p className="text-[10px] text-red-400 font-bold uppercase">
                         Uplink Blocked: Configure keys in System Vault
                       </p>
@@ -315,7 +292,7 @@ export default function NewRunModal() {
                   )}
                 </div>
 
-                <div className="p-6 bg-slate-950/30 space-y-6 overflow-y-auto">
+                <div className="p-6 bg-slate-950/30 space-y-6 overflow-y-auto custom-scrollbar">
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -327,39 +304,56 @@ export default function NewRunModal() {
                         className="text-[9px] text-blue-500 hover:text-blue-400 font-bold uppercase border border-blue-500/20 px-2 py-0.5 rounded flex items-center gap-1 transition-colors"
                       >
                         <BookOpen size={10} />
-                        {showGuide ? "Hide" : "Guide"}
+                        {showGuide ? 'Hide' : 'Guide'}
                       </button>
                     </div>
 
                     {/* Compact Collapsible Guide */}
                     {showGuide && (
-                      <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-3 animate-in slide-in-from-top-2 duration-200 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
-                        <div className="space-y-3">
+                      <div className="bg-slate-950 border border-blue-500/30 rounded-lg p-4 animate-in slide-in-from-top-2 duration-200 shadow-[0_0_20px_rgba(59,130,246,0.1)] space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <h4 className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                              <span className="w-1 h-1 rounded-full bg-blue-500" />
-                              Intent Structure
+                            <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">
+                              Protocol Verbs
                             </h4>
-                            <p className="text-[9px] text-slate-400 leading-relaxed mb-1.5">
-                              Use explicit verbs:{" "}
-                              <span className="text-blue-400 font-mono text-[8px]">
-                                Navigate, Click, Input, Verify
-                              </span>
-                            </p>
-                            <div className="bg-blue-500/5 border border-blue-500/10 p-1.5 rounded font-mono text-[8px] leading-relaxed text-slate-400">
-                              &quot;
-                              <span className="text-blue-400">Navigate</span> to
-                              google.com,{" "}
-                              <span className="text-blue-400">type</span>{" "}
-                              &apos;AI&apos;,{" "}
-                              <span className="text-blue-400">click</span>{" "}
-                              search.&quot;
-                            </div>
+                            <ul className="space-y-1.5">
+                              {['Navigate', 'Click', 'Input', 'Wait', 'Verify'].map(verb => (
+                                <li
+                                  key={verb}
+                                  className="text-[9px] text-slate-400 flex items-center gap-2"
+                                >
+                                  <div className="w-1 h-1 bg-blue-500 rounded-full" />
+                                  <span className="text-blue-200 font-mono">{verb}</span>: Define
+                                  target action.
+                                </li>
+                              ))}
+                            </ul>
                           </div>
+                          <div>
+                            <h4 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-2">
+                              Dynamic Injection
+                            </h4>
+                            <p className="text-[9px] text-slate-400 leading-relaxed">
+                              Reference JSON keys using double braces: <br />
+                              <span className="text-yellow-500 font-mono">
+                                Input {'{{user}}'}
+                              </span>{' '}
+                              <br />
+                              The Sniper will resolve these from your Injection Data.
+                            </p>
+                          </div>
+                        </div>
 
-                          <div className="pt-2 border-t border-slate-900 flex items-center gap-2 text-[8px] text-slate-600">
-                            <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                            Self-Healing Active (Healer-v2)
+                        <div className="pt-3 border-t border-slate-900">
+                          <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                            Example Mission
+                          </h4>
+                          <div className="bg-black/50 p-2 rounded border border-slate-800 font-mono text-[9px] text-slate-400 italic">
+                            &quot;1. Navigate to {'{{url}}'}
+                            <br />
+                            2. Input {'{{email}}'} into #login
+                            <br />
+                            3. Wait for 2000ms&quot;
                           </div>
                         </div>
                       </div>
@@ -400,25 +394,21 @@ export default function NewRunModal() {
                         name="is_chaos"
                         id="is_chaos"
                         checked={isChaos}
-                        onChange={(e) => setIsChaos(e.target.checked)}
+                        onChange={e => setIsChaos(e.target.checked)}
                         className="sr-only peer"
                       />
                       <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:bg-red-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 transition-colors"></div>
                     </div>
                     <span
                       className={`text-[9px] font-black uppercase tracking-[0.15em] transition-colors ${
-                        isChaos ? "text-red-500" : "text-slate-500"
+                        isChaos ? 'text-red-500' : 'text-slate-500'
                       }`}
                     >
-                      {isChaos ? "Chaos_Active" : "Chaos_Protocol"}
+                      {isChaos ? 'Chaos_Active' : 'Chaos_Protocol'}
                     </span>
                     <Zap
                       size={10}
-                      className={`${
-                        isChaos
-                          ? "text-red-500 animate-pulse"
-                          : "text-slate-700"
-                      }`}
+                      className={`${isChaos ? 'text-red-500 animate-pulse' : 'text-slate-700'}`}
                     />
                   </label>
 
@@ -445,7 +435,7 @@ export default function NewRunModal() {
                     disabled={isLoading || !hasAnyKey}
                     className="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-tighter px-10 py-2.5 rounded-lg shadow-xl shadow-blue-600/20 disabled:opacity-20 transition-all"
                   >
-                    {isLoading ? "CALCULATING_TRACE..." : "DEPLOY_SNIPER"}
+                    {isLoading ? 'CALCULATING_TRACE...' : 'DEPLOY_SNIPER'}
                   </button>
                 </div>
               </footer>
@@ -454,5 +444,5 @@ export default function NewRunModal() {
         </div>
       )}
     </>
-  );
+  )
 }

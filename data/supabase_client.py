@@ -1,22 +1,89 @@
 import logging
+import uuid
 from typing import List, Dict, Any, Optional
 from supabase import create_client, Client
 from configs.settings import settings
 
-
 logger = logging.getLogger("orchestrator.supabase")
-
 
 class SupabaseBridge:
     def __init__(self):
         url = settings.SUPABASE_URL
         key = settings.SUPABASE_SERVICE_ROLE_KEY
-        
+        self.telemetry_cache: Dict[str, bool] = {}
+
         if not url or not key:
             logger.warning("Supabase credentials missing. Database operations will be skipped.")
             self.client: Optional[Client] = None
         else:
             self.client = create_client(url, key)
+
+    def upload_screenshot(self, screenshot_bytes: bytes) -> Optional[str]:
+        if not self.client: return None
+        try:
+            filename = f"trace_{uuid.uuid4()}.png"
+            self.client.storage.from_("screenshots").upload(
+                path=filename,
+                file=screenshot_bytes,
+                file_options={"content-type": "image/png"}
+            )
+            return self.client.storage.from_("screenshots").get_public_url(filename)
+        except Exception as e:
+            logger.error(f"Screenshot upload failed: {e}")
+            return None
+
+    def _should_log_sensitive(self, run_id: str) -> bool:
+        if not self.client:
+            return False
+
+        if run_id in self.telemetry_cache:
+            return self.telemetry_cache[run_id]
+
+        try:
+            run_query = self.client.table("test_runs")\
+                .select("user_id")\
+                .eq("id", run_id)\
+                .maybe_single()\
+                .execute()
+
+            if not run_query.data:
+                logger.warning(f"Run {run_id} not found - defaulting to PRIVATE")
+                self.telemetry_cache[run_id] = False
+                return False
+
+            user_id = run_query.data["user_id"]
+            settings_query = self.client.table("user_settings")\
+                .select("telemetry_enabled")\
+                .eq("user_id", user_id)\
+                .maybe_single()\
+                .execute()
+
+            is_enabled = settings_query.data.get("telemetry_enabled", True) if settings_query.data else True
+
+            self.telemetry_cache[run_id] = is_enabled
+            return is_enabled
+
+        except Exception as e:
+            logger.error(f"❌ PRIVACY_CHECK_FAILED for run {run_id}: {e}")
+            self.telemetry_cache[run_id] = False
+            return False
+
+    def init_run(self, run_id: str, user_id: str, url: str, mode: str, intent: str) -> bool:
+        if not self.client: return False
+        try:
+            payload = {
+                "id": run_id,
+                "user_id": user_id,
+                "url": url,
+                "mode": mode,
+                "intent": intent,
+                "status": "RUNNING"
+            }
+            self.client.table("test_runs").upsert(payload).execute()
+            return True
+        except Exception as e:
+            logger.error(f"[RunInit] Failed to initialize run {run_id} for user {user_id}: {e}")
+            return False
 
     def log_step(
         self,
@@ -28,23 +95,10 @@ class SupabaseBridge:
         message: str = "",
         **kwargs
     ) -> bool:
-        """
-        Write execution telemetry to Supabase for real-time monitoring.
-
-        Args:
-            run_id: UUID of the test run
-            step_id: Sequential step number
-            role: Actor performing the action (customer/admin/system)
-            action: Type of action (click/input/navigate/etc)
-            status: Execution status (INFO/PASSED/FAILED/RUNNING)
-            message: Human-readable description
-            **kwargs: Additional fields (url, details, selector, value)
-
-        Returns:
-            bool: True if log written successfully, False otherwise
-        """
         if not self.client:
             return False
+
+        telemetry_enabled = self._should_log_sensitive(run_id)
 
         payload = {
             "run_id": run_id,
@@ -55,9 +109,18 @@ class SupabaseBridge:
             "message": message,
             "url": kwargs.get("url"),
             "details": kwargs.get("details", ""),
-            "selector": kwargs.get("selector"),
-            "value": kwargs.get("value"),
         }
+
+        if not telemetry_enabled:
+            if action in ["analysis", "fingerprint"]:
+                logger.info(f"🛡️ [Privacy Active] Suppressed Cloud Log: {action} at {kwargs.get('url')}")
+                return True
+
+            payload["selector"] = None
+            payload["value"] = None
+        else:
+            payload["selector"] = kwargs.get("selector")
+            payload["value"] = kwargs.get("value")
 
         try:
             self.client.table("execution_logs").insert(payload).execute()
@@ -69,33 +132,27 @@ class SupabaseBridge:
     def save_fingerprint(
         self, user_id: str, url: str, selector: str, dna: Dict[str, Any]
     ) -> bool:
-        """
-        Store UI element fingerprint for self-healing reference library.
-
-        Args:
-            user_id: Clerk user ID
-            url: Page URL where element was found
-            selector: CSS/XPath selector
-            dna: Element metadata (tag, text, attributes)
-
-        Returns:
-            bool: True if fingerprint saved successfully
-        """
         if not self.client:
             return False
 
-        payload = {
-            "user_id": user_id,
-            "url": url,
-            "selector": selector,
-            "tag_name": dna.get("tag"),
-            "inner_text": dna.get("text"),
-            "attributes": dna.get("attributes", {}),
-        }
-
         try:
+            sq = self.client.table("user_settings").select("telemetry_enabled").eq("user_id", user_id).maybe_single().execute()
+            if sq.data and not sq.data.get("telemetry_enabled", True):
+                logger.info(f"🛡️ [Privacy Active] DNA storage blocked for {url}")
+                return True
+
+            payload = {
+                "user_id": user_id,
+                "url": url,
+                "selector": selector,
+                "tag_name": dna.get("tag"),
+                "inner_text": dna.get("text"),
+                "attributes": dna.get("attributes", {}),
+            }
+
             self.client.table("element_fingerprints").upsert(
-                payload, on_conflict="url,selector"
+                payload,
+                on_conflict="user_id,url,selector"
             ).execute()
             return True
         except Exception as e:
@@ -103,19 +160,7 @@ class SupabaseBridge:
             return False
 
     def start_run(self, run_id: str, mode: str) -> bool:
-        """
-        Mark test run as active in database.
-
-        Args:
-            run_id: UUID of the test run
-            mode: Execution mode (sniper/scout/chaos/replay)
-
-        Returns:
-            bool: True if status updated successfully
-        """
-        if not self.client:
-            return False
-
+        if not self.client: return False
         try:
             self.client.table("test_runs").update(
                 {"status": "RUNNING", "mode": mode}
@@ -126,22 +171,9 @@ class SupabaseBridge:
             return False
 
     def update_run_status(self, run_id: str, status: str) -> bool:
-        """
-        Update test run final status.
-
-        Args:
-            run_id: UUID of the test run
-            status: Final status (COMPLETED/FAILED/HEALED)
-
-        Returns:
-            bool: True if status updated successfully
-        """
-        if not self.client:
-            return False
-
+        if not self.client: return False
         valid_statuses = ["QUEUED", "PENDING", "RUNNING", "COMPLETED", "FAILED", "HEALED"]
         status_upper = status.upper() if status.upper() in valid_statuses else "FAILED"
-
         try:
             self.client.table("test_runs").update({"status": status_upper}).eq(
                 "id", run_id
@@ -151,6 +183,4 @@ class SupabaseBridge:
             logger.error(f"[RunStatus] Failed to update run {run_id} to {status_upper}: {e}")
             return False
 
-
-# Global singleton instance
 db_bridge = SupabaseBridge()

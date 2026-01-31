@@ -1,102 +1,120 @@
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from data.supabase_client import db_bridge
-
 
 logger = logging.getLogger("orchestrator.analyzer")
 
 
 class RiskAnalyzer:
     """
-    Predictive stability scoring based on historical execution telemetry.
-    Algorithm: Risk = (FailureRate * 70%) + (HealRate * 30%)
+    Predictive stability scoring engine using historical execution telemetry.
+    Provides URL-specific risk assessment and fleet-wide heatmap generation.
     """
+
+    async def get_url_stability_report(self, url: str) -> Dict:
+        """
+        Fetch historical stability metrics for a specific URL.
+
+        Returns risk score and status to guide test plan generation.
+        """
+        if not db_bridge.client:
+            return {"status": "UNKNOWN", "score": 0}
+
+        try:
+            res = db_bridge.client.table("execution_logs")\
+                .select("status")\
+                .eq("url", url)\
+                .execute()
+
+            logs = res.data or []
+            if not logs:
+                return {"status": "NEW", "score": 0}
+
+            total = len(logs)
+            fails = sum(1 for log in logs if log["status"] == "FAILED")
+
+            score = round((fails / total) * 100, 1)
+
+            return {
+                "score": score,
+                "status": "BRITTLE" if score > 25 else "STABLE",
+                "total_runs": total
+            }
+
+        except Exception as e:
+            logger.error(f"Stability check failed for {url}: {e}")
+            return {"status": "ERROR", "score": 0}
 
     async def generate_heatmap(self) -> List[Dict]:
         """
-        Generate risk heatmap from execution logs.
+        Generate fleet-wide risk heatmap from recent execution history.
 
-        Returns:
-            List of risk items sorted by score (highest first)
+        Returns sorted list of URLs by risk score (highest first).
         """
         if not db_bridge.client:
-            logger.warning("Supabase client unavailable. Returning empty heatmap.")
             return []
 
         try:
-            # Fetch recent execution logs with run metadata
-            response = db_bridge.client.table("execution_logs").select(
-                "status, action, test_runs!inner(url)"
-            ).limit(5000).execute()
+            response = db_bridge.client.table("execution_logs")\
+                .select("status, url")\
+                .order("created_at", desc=True)\
+                .limit(2000)\
+                .execute()
 
-            logs = response.data if response.data else []
-
+            logs = response.data or []
             if not logs:
-                logger.info("No telemetry found in database. Heatmap is empty.")
                 return []
 
-            stats: Dict[str, Dict[str, int]] = {}
-
             # Aggregate stats by URL
+            stats = {}
             for entry in logs:
-                url = entry.get("test_runs", {}).get("url") if entry.get("test_runs") else None
+                url = entry.get("url")
                 if not url:
                     continue
 
                 if url not in stats:
-                    stats[url] = {"total": 0, "fails": 0, "heals": 0}
+                    stats[url] = {"total": 0, "fails": 0}
 
                 stats[url]["total"] += 1
-
-                status = entry.get("status", "").upper()
-                action = entry.get("action", "").lower()
-
-                if status == "FAILED":
+                if entry["status"] == "FAILED":
                     stats[url]["fails"] += 1
 
-                if action == "healing" or "heal" in action:
-                    stats[url]["heals"] += 1
-
-            heatmap = []
-
             # Calculate risk scores
+            heatmap = []
             for url, data in stats.items():
-                total = data["total"]
-                if total == 0:
-                    continue
-
-                fail_rate = (data["fails"] / total) * 100
-                heal_rate = (data["heals"] / total) * 100
-
-                # Weighted formula: failures more critical than heals
-                risk_score = min(round((fail_rate * 0.7) + (heal_rate * 0.3), 1), 100.0)
-
-                # Determine status and recommendation
-                if risk_score > 65:
-                    status = "CRITICAL"
-                    recommendation = "🛑 Immediate Fix: Review Business Logic & Selector Stability"
-                elif risk_score > 25:
-                    status = "BRITTLE"
-                    recommendation = "⚠️ Optimization Required: UI Selectors frequently healing"
-                else:
-                    status = "STABLE"
-                    recommendation = "✅ Standard Maintenance: Flow performing as expected"
+                fail_rate = (data["fails"] / data["total"]) * 100
+                risk_score = round(min(fail_rate, 100.0), 1)
 
                 heatmap.append({
                     "url": url,
-                    "risk_score": risk_score,
-                    "status": status,
-                    "recommendation": recommendation,
+                    "riskscore": risk_score,
+                    "status": self._get_status(risk_score),
+                    "recommendation": self._get_recommendation(risk_score),
                     "metrics": {
-                        "total_interactions": total,
-                        "failure_count": data["fails"],
-                        "healing_events": data["heals"],
-                    },
+                        "total_runs": data["total"],
+                        "failures": data["fails"],
+                        "success_rate": round(100 - fail_rate, 1)
+                    }
                 })
 
-            # Sort by highest risk first
-            return sorted(heatmap, key=lambda x: x["risk_score"], reverse=True)
+            return sorted(heatmap, key=lambda x: x["riskscore"], reverse=True)
 
         except Exception as e:
             logger.error(f"Heatmap generation failed: {e}")
             return []
+
+    def _get_status(self, score: float) -> str:
+        """Classify risk level based on score."""
+        if score > 60:
+            return "CRITICAL"
+        if score > 25:
+            return "BRITTLE"
+        return "STABLE"
+
+    def _get_recommendation(self, score: float) -> str:
+        """Generate actionable recommendation based on risk score."""
+        if score > 60:
+            return "🛑 Immediate selector audit required"
+        if score > 25:
+            return "⚠️ Optimize selectors for resilience"
+        return "✅ Performance stable"
