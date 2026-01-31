@@ -268,7 +268,7 @@ limitations under the License.
 
 ### Commercial Support
 
-For enterprise deployment, custom integrations, or priority support, contact: **your-email@example.com**
+For enterprise deployment, custom integrations, or priority support, contact: **asilochkimas@gmail.com**
 
 ---
 
